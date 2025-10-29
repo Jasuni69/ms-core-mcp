@@ -1,8 +1,28 @@
 # Microsoft Fabric MCP Server
 
-A comprehensive Python-based MCP (Model Context Protocol) server for interacting with Microsoft Fabric APIs, featuring advanced PySpark notebook development, testing, and optimization capabilities with LLM integration.
+A comprehensive Python-based MCP (Model Context Protocol) server for interacting with Microsoft Fabric APIs using natural language through Claude Desktop.
 
-## 🚀 Features
+**Use natural language to manage your Microsoft Fabric workspaces, lakehouses, warehouses, notebooks, and more!**
+
+## 🚀 Quick Start
+
+Want to ask Claude Desktop questions like:
+- "List all my Fabric workspaces"
+- "Create a new lakehouse called 'sales-data' in my analytics workspace"
+- "Show me all tables in my lakehouse"
+- "Generate a PySpark notebook for ETL processing"
+
+### 5-Minute Setup:
+
+1. **Install dependencies:** `uv sync`
+2. **Authenticate with Azure:** `az login`
+3. **Configure Claude Desktop:** Add this project to `claude_desktop_config.json`
+4. **Restart Claude Desktop**
+5. **Start querying!** Ask Claude: "List all my Fabric workspaces"
+
+Detailed instructions below ⬇️
+
+## 🌟 Features
 
 ### **Core Fabric Operations**
 - ✅ Workspace, lakehouse, warehouse, and table management
@@ -18,8 +38,8 @@ A comprehensive Python-based MCP (Model Context Protocol) server for interacting
 - 📊 **Performance analysis** with scoring and optimization recommendations
 - 🚀 **Real-time monitoring** and execution insights
 
-### **LLM Integration**
-- 🤖 **Natural language interface** for PySpark development
+### **Natural Language Interface via Claude Desktop**
+- 🤖 **Ask questions in plain English** about your Fabric resources
 - 🧠 **Context-aware assistance** with conversation memory
 - 🎨 **Intelligent code formatting** and explanations
 - 📈 **Smart optimization suggestions** based on project patterns
@@ -125,90 +145,152 @@ graph TB
 6. **Results flow back through LLM with intelligent formatting**
 7. **Developer receives contextual, smart responses**
 
-## 📋 Requirements
+## 📋 Prerequisites
 
-- **Python 3.12+**
-- **Azure credentials** for authentication
-- **uv** (from astral): [Installation instructions](https://docs.astral.sh/uv/getting-started/installation/#installing-uv)
-- **Azure CLI**: [Installation instructions](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
-- **Optional: Node.js** for MCP inspector: [Installation instructions](https://nodejs.org/en/download)
+Before you begin, ensure you have:
+- **Python 3.12+** installed
+- **Claude Desktop** installed ([Download here](https://claude.ai/download))
+- **Azure CLI** installed ([Download here](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli))
+- **uv** package manager ([Install here](https://docs.astral.sh/uv/getting-started/installation/))
+- **Access to a Microsoft Fabric workspace** with appropriate permissions
 
-## 🔧 Installation
+## 🔧 Setup Instructions
 
-1. **Clone the repository:**
+### Step 1: Install Dependencies
+
+1. **Navigate to this project directory:**
    ```bash
-   git clone https://github.com/your-repo/fabric-mcp.git
-   cd fabric-mcp
+   cd path/to/ms-fabric-mcp
    ```
 
-2. **Set up virtual environment:**
+2. **Set up the Python virtual environment:**
    ```bash
    uv sync
    ```
+   This will create a `.venv` folder and install all required Python packages.
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
+### Step 2: Authenticate with Azure
+
+Authenticate with Azure CLI and request a token for Microsoft Fabric:
+
+```bash
+# Login to Azure
+az login
+
+# Get an access token for Fabric (optional - to verify authentication)
+az account get-access-token --resource https://api.fabric.microsoft.com/
+```
+
+**Important:** Make sure the account you use has at least **Contributor** or **Member** role in your Fabric workspace to create resources.
+
+### Step 3: Configure Claude Desktop
+
+1. **Locate your Claude Desktop configuration file:**
+   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+2. **Edit the configuration file** and add the MCP server configuration:
+
+   **For Windows:**
+   ```json
+   {
+     "mcpServers": {
+       "ms-fabric-mcp": {
+         "command": "C:\\path\\to\\ms-fabric-mcp\\.venv\\Scripts\\python.exe",
+         "args": [
+           "C:\\path\\to\\ms-fabric-mcp\\fabric_mcp_stdio.py"
+         ],
+         "env": {
+           "USERPROFILE": "C:\\Users\\YourUsername"
+         }
+       }
+     }
+   }
    ```
 
-## 🚀 Usage
+   **For macOS/Linux:**
+   ```json
+   {
+     "mcpServers": {
+       "ms-fabric-mcp": {
+         "command": "/path/to/ms-fabric-mcp/.venv/bin/python",
+         "args": [
+           "/path/to/ms-fabric-mcp/fabric_mcp_stdio.py"
+         ],
+         "env": {
+           "HOME": "/home/yourusername"
+         }
+       }
+     }
+   }
+   ```
 
-1. **Using STDIO**
+   **Important:** Replace the paths with the actual full paths on your system!
 
-### **Connect to Microsoft Fabric**
+3. **Save the configuration file**
 
-```bash
-az login --scope https://api.fabric.microsoft.com/.default
-```
+### Step 4: Restart Claude Desktop
 
-### **Running with MCP Inspector**
+Close Claude Desktop completely and restart it. The MCP server will now be available.
 
-```bash
-uv run --with mcp mcp dev fabric_mcp.py
-```
-This starts the server with inspector at `http://localhost:6274`.
+### Step 5: Test the Connection
 
-### **VSCode Integration**
+Open Claude Desktop and try these commands:
 
-Add to your `launch.json`:
-```json
-{
-    "mcp": {
-        "servers": {
-            "ms-fabric-mcp": {
-                "type": "stdio",
-                "command": "<FullPathToProjectFolder>\\.venv\\Scripts\\python.exe",
-                "args": ["<FullPathToProjectFolder>\\fabric_mcp.py"]
-            }
-        }
-    }
-}
-```
+1. **List your workspaces:**
+   ```
+   List all my Microsoft Fabric workspaces
+   ```
 
-2. **Using HTTP**
-### **Start the MCP Server**
-```bash
-uv run python .\fabric_mcp.py --port 8081
-```
+2. **Set a workspace:**
+   ```
+   Set my workspace to "workspace-name"
+   ```
 
-### **VSCode Integration**
+3. **List lakehouses:**
+   ```
+   Show me all lakehouses in my workspace
+   ```
 
-Add to your `launch.json`:
-```json
-{
-    "mcp": {
-        "servers": {
-            "ms-fabric-mcp": {
-                "type": "http",
-                "url": "http://<localhost or remote IP>:8081/mcp/",
-                "headers": {
-                    "Accept": "application/json,text/event-stream",
-                }
-            }
-        }
-    }
-}
-```
+4. **Create a lakehouse:**
+   ```
+   Create a new lakehouse called "test-lakehouse" in my workspace
+   ```
+
+That's it! You can now use natural language to interact with Microsoft Fabric!
+
+## 🎯 Common Use Cases
+
+### Example Queries You Can Ask Claude Desktop:
+
+**Workspace Management:**
+- "List all my Fabric workspaces"
+- "Set my workspace to 'analytics-prod'"
+
+**Lakehouse Operations:**
+- "Show me all lakehouses in my workspace"
+- "Create a lakehouse called 'sales-data' with description 'Sales analytics data'"
+- "List all tables in the 'sales-data' lakehouse"
+- "Show me the schema for the 'transactions' table"
+
+**Warehouse Operations:**
+- "List all warehouses in my workspace"
+- "Create a warehouse called 'reporting-dw'"
+
+**PySpark Notebook Creation:**
+- "Create a PySpark notebook for ETL processing"
+- "Generate a PySpark notebook with ML template"
+- "Create a Fabric-optimized notebook for data analytics"
+
+**Code Generation:**
+- "Generate PySpark code to read from a lakehouse table"
+- "Show me code to merge Delta tables"
+- "Create code for data quality checks"
+
+**Performance Analysis:**
+- "Analyze the performance of my notebook"
+- "Validate this PySpark code for best practices"
 
 ## 🛠️ Complete Tool Reference
 
@@ -566,16 +648,119 @@ LLM Response:
 
 ## 🔍 Troubleshooting
 
-### **Common Issues**
-- **Authentication**: Ensure `az login` with correct scope
-- **Context**: Use `clear_context()` to reset session state
-- **Workspace**: Verify workspace names and permissions
-- **Templates**: Check available template types in documentation
+### **MCP Server Not Showing Up in Claude Desktop**
 
-### **Getting Help**
-- Use validation tools for code issues
-- Check performance analysis for optimization opportunities
-- Leverage LLM natural language interface for guidance
+1. **Verify the configuration file path:**
+   - Make sure you're editing the correct `claude_desktop_config.json` file
+   - Check that the file has valid JSON syntax (use a JSON validator)
+
+2. **Check the Python path:**
+   - Ensure the path to `python.exe` (Windows) or `python` (macOS/Linux) is correct
+   - Verify the `.venv` directory exists in your project folder
+
+3. **Restart Claude Desktop completely:**
+   - Close all Claude Desktop windows
+   - On Windows, check Task Manager to ensure it's not running in the background
+   - Restart the application
+
+4. **Check the logs:**
+   - Claude Desktop logs can help identify connection issues
+   - Look for error messages related to the MCP server startup
+
+### **Authentication Errors**
+
+**Problem:** "Authentication failed" or "Unable to get access token"
+
+**Solutions:**
+1. Run `az login` again to refresh your authentication
+2. Verify you have access to the Fabric workspace:
+   ```bash
+   az account get-access-token --resource https://api.fabric.microsoft.com/
+   ```
+3. Check that the `USERPROFILE` (Windows) or `HOME` (macOS/Linux) environment variable is set correctly in the config
+
+**Problem:** "Permission denied when creating resources"
+
+**Solutions:**
+1. Verify your account has **Contributor** or **Admin** role in the Fabric workspace
+2. Contact your Fabric workspace administrator to grant appropriate permissions
+3. Try read-only operations first (list workspaces, list lakehouses) to verify connectivity
+
+### **Lakehouse/Warehouse Creation Fails Silently**
+
+**Problem:** Creation command succeeds but resource doesn't appear
+
+**Solutions:**
+1. Check Fabric workspace permissions - you need write access
+2. Wait a few seconds and list resources again (sometimes there's a delay)
+3. Check the Fabric portal directly to see if the resource exists
+4. Look at the error message returned by Claude Desktop - updated error handling should now show detailed error messages
+
+### **"Workspace not set" Error**
+
+**Problem:** Commands fail with "Workspace not set"
+
+**Solution:**
+Set your workspace first:
+```
+Set my workspace to "your-workspace-name"
+```
+or specify it in each command:
+```
+List lakehouses in workspace "your-workspace-name"
+```
+
+### **Module Import Errors**
+
+**Problem:** Python import errors when starting the server
+
+**Solutions:**
+1. Make sure you ran `uv sync` in the project directory
+2. Verify the virtual environment was created:
+   ```bash
+   ls .venv  # macOS/Linux
+   dir .venv  # Windows
+   ```
+3. Try reinstalling dependencies:
+   ```bash
+   uv sync --reinstall
+   ```
+
+### **Environment Variables Not Working**
+
+**Problem:** Azure CLI authentication not recognized by the MCP server
+
+**Solution:**
+Ensure the environment variables are set in the Claude Desktop config:
+- Windows: `"USERPROFILE": "C:\\Users\\YourUsername"`
+- macOS/Linux: `"HOME": "/home/yourusername"`
+
+### **Still Having Issues?**
+
+1. **Check Python version:**
+   ```bash
+   python --version  # Should be 3.12 or higher
+   ```
+
+2. **Test the server directly:**
+   ```bash
+   cd path/to/ms-fabric-mcp
+   .venv/Scripts/python fabric_mcp_stdio.py  # Windows
+   .venv/bin/python fabric_mcp_stdio.py      # macOS/Linux
+   ```
+   If this fails, check the error message.
+
+3. **Verify Azure CLI is installed:**
+   ```bash
+   az --version
+   ```
+
+4. **Test Fabric API access manually:**
+   ```bash
+   $token = az account get-access-token --resource "https://api.fabric.microsoft.com/" --query accessToken -o tsv
+   $headers = @{ Authorization = "Bearer $token" }
+   Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $headers
+   ```
 
 ## 📈 Performance Metrics
 
@@ -585,6 +770,12 @@ The analysis tools provide:
 - **Optimization opportunities** identification
 - **Scoring system** (0-100) for code quality
 - **Fabric compatibility** assessment
+
+## 📚 Additional Resources
+
+- **[SETUP.md](SETUP.md)** - Quick setup guide for colleagues (5-minute version)
+- **[INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md)** - Step-by-step checklist to ensure nothing is missed
+- **[CLAUDE_DESKTOP_CONFIG_EXAMPLE.json](CLAUDE_DESKTOP_CONFIG_EXAMPLE.json)** - Example configuration file for easy copy-paste
 
 ## 🤝 Contributing
 
@@ -600,4 +791,22 @@ Inspired by: https://github.com/Augustab/microsoft_fabric_mcp/tree/main
 
 ---
 
-**Ready to supercharge your Microsoft Fabric development with intelligent PySpark assistance!** 🚀
+## 📋 Quick Reference Summary
+
+**For your colleague to get started:**
+1. Share this entire `ms-fabric-mcp` directory
+2. They should follow [SETUP.md](SETUP.md) for quick setup
+3. Or use [INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md) for detailed step-by-step
+
+**What they need:**
+- Python 3.12+
+- Claude Desktop
+- Azure CLI
+- Access to a Fabric workspace (Contributor role)
+
+**What they get:**
+Natural language control of Microsoft Fabric through Claude Desktop!
+
+---
+
+**Ready to supercharge your Microsoft Fabric development with intelligent assistance!** 🚀
