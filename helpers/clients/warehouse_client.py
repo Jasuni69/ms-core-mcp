@@ -49,5 +49,9 @@ class WarehouseClient:
             raise ValueError("Warehouse name cannot be empty.")
 
         return await self.client.create_item(
-            name=name, workspace=workspace, description=description, type="Warehouse"
+            name=name,
+            workspace=workspace,
+            description=description,
+            type="Warehouse",
+            lro=True,
         )

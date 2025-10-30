@@ -7,6 +7,7 @@ from helpers.clients.report_client import ReportClient
 from helpers.clients.fabric_client import FabricApiClient
 from helpers.clients.sql_client import SQLClient, get_sql_endpoint
 from helpers.clients.notebook_client import NotebookClient
+from helpers.clients.onelake_client import OneLakeClient
 
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "NotebookClient",
     "SQLClient",
     "get_sql_endpoint",
+    "OneLakeClient",
 ]

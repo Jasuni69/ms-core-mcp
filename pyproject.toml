@@ -1,12 +1,13 @@
 [project]
-name = "ms-fabric-mcp"
+name = "ms-fabric-core-tools-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "Microsoft Fabric MCP server exposing core administrative and data tooling"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]",
     "azure-identity",
+    "azure-storage-file-datalake",
     "deltalake",
     "requests",
     "cachetools",

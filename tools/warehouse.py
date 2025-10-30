@@ -80,7 +80,19 @@ async def create_warehouse(
             description=description,
         )
 
-        return f"Warehouse '{response['id']}' created successfully."
+        if isinstance(response, str):
+            return response
+
+        if not isinstance(response, dict):
+            return "Unexpected response when creating warehouse."
+
+        warehouse_id = response.get("id")
+        display_name = response.get("displayName", name)
+
+        if warehouse_id:
+            return f"Warehouse '{display_name}' created successfully with ID: {warehouse_id}."
+
+        return f"Warehouse '{display_name}' created, but no ID was returned."
 
     except Exception as e:
         return f"Error creating warehouse: {str(e)}"

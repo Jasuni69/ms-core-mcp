@@ -1,0 +1,259 @@
+from typing import Any, Dict, Optional
+
+from helpers.clients import FabricApiClient
+from helpers.logging_config import get_logger
+from helpers.utils.authentication import get_azure_credentials
+from helpers.utils.context import mcp, __ctx_cache
+from mcp.server.fastmcp import Context
+from helpers.utils import _is_valid_uuid
+
+
+logger = get_logger(__name__)
+
+
+async def _resolve_workspace(
+    ctx: Context,
+    workspace: Optional[str],
+) -> Dict[str, Any]:
+    if ctx is None:
+        raise ValueError("Context (ctx) must be provided.")
+
+    credential = get_azure_credentials(ctx.client_id, __ctx_cache)
+    fabric_client = FabricApiClient(credential)
+
+    workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+    if not workspace_ref:
+        raise ValueError("Workspace must be specified or set via set_workspace.")
+
+    workspace_name, workspace_id = await fabric_client.resolve_workspace_name_and_id(
+        workspace_ref
+    )
+
+    return {
+        "credential": credential,
+        "fabric_client": fabric_client,
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "workspace_ref": workspace_ref,
+    }
+
+
+async def _resolve_workspace_item(
+    ctx: Context,
+    workspace: Optional[str],
+    item: Optional[str],
+    item_type: str,
+) -> Dict[str, Any]:
+    context = await _resolve_workspace(ctx, workspace)
+
+    item_ref = item or __ctx_cache.get(f"{ctx.client_id}_{item_type.lower()}")
+    if not item_ref:
+        raise ValueError(f"{item_type} must be specified or stored in context.")
+
+    item_name, item_id = await context["fabric_client"].resolve_item_name_and_id(
+        item=item_ref,
+        type=item_type,
+        workspace=context["workspace_id"],
+    )
+
+    context.update({
+        "item_id": str(item_id),
+        "item_name": item_name,
+        "item_ref": item_ref,
+        "item_type": item_type,
+    })
+    return context
+
+
+@mcp.tool()
+async def pipeline_run(
+    workspace: Optional[str] = None,
+    pipeline: Optional[str] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        payload = parameters or {}
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/run",
+            params=payload,
+            method="post",
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error triggering pipeline run: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def pipeline_status(
+    workspace: Optional[str] = None,
+    pipeline: Optional[str] = None,
+    run_id: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        if not run_id:
+            raise ValueError("run_id must be provided.")
+
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/runs/{run_id}"
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error retrieving pipeline status: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def pipeline_logs(
+    workspace: Optional[str] = None,
+    pipeline: Optional[str] = None,
+    run_id: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        if not run_id:
+            raise ValueError("run_id must be provided.")
+
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/runs/{run_id}/logs"
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error retrieving pipeline logs: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def dataflow_refresh(
+    workspace: Optional[str] = None,
+    dataflow: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        context = await _resolve_workspace_item(ctx, workspace, dataflow, "Dataflow")
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/dataflows/{context['item_id']}/refreshes",
+            params={},
+            method="post",
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error triggering dataflow refresh: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def schedule_list(
+    workspace: Optional[str] = None,
+    item: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        context = await _resolve_workspace(ctx, workspace)
+        fabric_client = context["fabric_client"]
+
+        if item:
+            if _is_valid_uuid(item):
+                item_name = item
+                item_id = item
+            else:
+                item_name = None
+                item_id = None
+                for item_type in [
+                    "SemanticModel",
+                    "Pipeline",
+                    "Dataflow",
+                    "Lakehouse",
+                    "Warehouse",
+                    "Notebook",
+                    "Report",
+                ]:
+                    try:
+                        resolved_name, resolved_id = await fabric_client.resolve_item_name_and_id(
+                            item=item,
+                            type=item_type,
+                            workspace=context["workspace_id"],
+                        )
+                        item_name, item_id = resolved_name, resolved_id
+                        break
+                    except Exception:
+                        continue
+
+                if not item_id:
+                    raise ValueError(
+                        f"Unable to resolve item '{item}' in workspace."
+                    )
+
+            response = await fabric_client._make_request(
+                endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/refreshSchedule"
+            )
+            return {"item": item_name, "schedule": response}
+
+        response = await fabric_client._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/refreshSchedules"
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error listing schedules: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def schedule_set(
+    workspace: Optional[str] = None,
+    item: Optional[str] = None,
+    schedule: Optional[Dict[str, Any]] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        if not item:
+            raise ValueError("Item must be specified when setting a schedule.")
+
+        context = await _resolve_workspace(ctx, workspace)
+        fabric_client = context["fabric_client"]
+
+        if _is_valid_uuid(item):
+            item_id = item
+        else:
+            item_id = None
+            for item_type in [
+                "SemanticModel",
+                "Pipeline",
+                "Dataflow",
+                "Lakehouse",
+                "Warehouse",
+                "Notebook",
+                "Report",
+            ]:
+                try:
+                    _, resolved_id = await fabric_client.resolve_item_name_and_id(
+                        item=item,
+                        type=item_type,
+                        workspace=context["workspace_id"],
+                    )
+                    item_id = resolved_id
+                    break
+                except Exception:
+                    continue
+
+            if not item_id:
+                raise ValueError(
+                    f"Unable to resolve item '{item}' in workspace."
+                )
+
+        response = await fabric_client._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/refreshSchedule",
+            params=schedule or {},
+            method="patch",
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error setting schedule: %s", exc)
+        return {"error": str(exc)}
+
+

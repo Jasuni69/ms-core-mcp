@@ -94,9 +94,23 @@ async def create_lakehouse(
         ws = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
         if not ws:
             return "Workspace not set. Please set a workspace using the 'set_workspace' command."
-        return await lakehouse_client.create_lakehouse(
+
+        result = await lakehouse_client.create_lakehouse(
             name=name, workspace=ws, description=description
         )
+
+        # Format the response to be more user-friendly
+        if result and isinstance(result, dict):
+            lakehouse_id = result.get('id', 'N/A')
+            lakehouse_name = result.get('displayName', name)
+            return f"✓ Successfully created lakehouse '{lakehouse_name}' with ID: {lakehouse_id} in workspace '{ws}'"
+        elif result:
+            return f"Lakehouse creation returned: {result}"
+        else:
+            return f"⚠ Lakehouse creation returned no response. This may indicate a permissions issue or API failure."
+
     except Exception as e:
         logger.error(f"Error creating lakehouse: {e}")
-        return f"Error creating lakehouse: {e}"
+        import traceback
+        error_details = traceback.format_exc()
+        return f"Error creating lakehouse '{name}':\n{str(e)}\n\nDetails:\n{error_details}"

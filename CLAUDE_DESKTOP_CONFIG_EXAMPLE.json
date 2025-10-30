@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "ms-fabric-core-tools-mcp": {
+      "command": "REPLACE_WITH_FULL_PATH_TO_PYTHON_EXE",
+      "args": [
+        "REPLACE_WITH_FULL_PATH_TO_FABRIC_MCP_STDIO_PY"
+      ],
+      "env": {
+        "USERPROFILE": "REPLACE_WITH_YOUR_HOME_DIRECTORY"
+      }
+    }
+  }
+}

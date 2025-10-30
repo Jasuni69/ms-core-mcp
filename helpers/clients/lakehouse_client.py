@@ -40,7 +40,9 @@ class LakehouseClient:
         if not lakehouse:
             raise ValueError("Lakehouse name cannot be empty.")
 
-        response = await self.client.get_item(workspace_id=workspace, item_id=lakehouse)
+        response = await self.client.get_item(
+            workspace_id=workspace, item_id=lakehouse, item_type="lakehouse"
+        )
         logger.info(f"Lakehouse details: {response}")
         return response
 

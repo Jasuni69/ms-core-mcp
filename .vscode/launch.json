@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "mcp": {
+    "servers": {
+      "ms-fabric-mcp-stdio": {
+        "type": "stdio",
+        "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+        "args": ["${workspaceFolder}/fabric_mcp.py"]
+      },
+      "ms-fabric-mcp-http": {
+        "type": "http",
+        "url": "http://localhost:8081/mcp/",
+        "headers": {
+          "Accept": "application/json,text/event-stream"
+        }
+      }
+    }
+  },
+  "configurations": [
+    {
+      "name": "Run fabric_mcp (debug)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/fabric_mcp.py",
+      "console": "integratedTerminal",
+      "args": ["--port", "8081"],
+      "cwd": "${workspaceFolder}",
+      "env": {},
+      "justMyCode": false
+    }
+  ]
+}

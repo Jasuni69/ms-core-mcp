@@ -146,9 +146,12 @@ class FabricApiClient:
                 return response.json()
             except requests.RequestException as e:
                 logger.error(f"API call failed: {str(e)}")
+                error_msg = f"API call failed: {str(e)}"
                 if e.response is not None:
+                    logger.error(f"Response status: {e.response.status_code}")
                     logger.error(f"Response content: {e.response.text}")
-                return None
+                    error_msg += f"\nStatus: {e.response.status_code}\nResponse: {e.response.text}"
+                raise ValueError(error_msg)
         else:
             results = []
             continuation_token = None
@@ -341,6 +344,47 @@ class FabricApiClient:
             )
         return await self._make_request(
             f"workspaces/{workspace_id}/{item_type}s/{item_id}"
+        )
+
+    async def get_item_permissions(
+        self,
+        workspace_id: str,
+        item_id: str,
+    ) -> Dict[str, Any]:
+        """Retrieve permissions for a given workspace item."""
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(item_id):
+            raise ValueError("Invalid item ID.")
+
+        return await self._make_request(
+            f"workspaces/{workspace_id}/items/{item_id}/permissions"
+        )
+
+    async def set_item_permissions(
+        self,
+        workspace_id: str,
+        item_id: str,
+        assignments: List[Dict[str, Any]],
+        principal_scope: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Set permissions for a workspace item."""
+
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(item_id):
+            raise ValueError("Invalid item ID.")
+        if not assignments:
+            raise ValueError("At least one assignment must be provided.")
+
+        payload: Dict[str, Any] = {"value": assignments}
+        if principal_scope:
+            payload["scope"] = principal_scope
+
+        return await self._make_request(
+            f"workspaces/{workspace_id}/items/{item_id}/permissions",
+            params=payload,
+            method="post",
         )
 
     async def create_item(

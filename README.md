@@ -26,9 +26,11 @@ Detailed instructions below ⬇️
 
 ### **Core Fabric Operations**
 - ✅ Workspace, lakehouse, warehouse, and table management
-- ✅ Delta table schemas and metadata retrieval
-- ✅ SQL query execution and data loading
-- ✅ Report and semantic model operations
+- ✅ Delta table preview, history, schema, and maintenance (OPTIMIZE/VACUUM)
+- ✅ SQL endpoint orchestration for query, export, and notebook jobs
+- ✅ Pipelines, dataflows, and refresh schedule automation
+- ✅ Power BI reporting and semantic model refresh workflows
+- ✅ Microsoft Graph messaging, directory, and drive insights
 
 ### **Advanced PySpark Development**
 - 📓 **Intelligent notebook creation** with 6 specialized templates
@@ -160,7 +162,7 @@ Before you begin, ensure you have:
 
 1. **Navigate to this project directory:**
    ```bash
-   cd path/to/ms-fabric-mcp
+   cd path/to/ms-fabric-core-tools-mcp
    ```
 
 2. **Set up the Python virtual environment:**
@@ -196,10 +198,10 @@ az account get-access-token --resource https://api.fabric.microsoft.com/
    ```json
    {
      "mcpServers": {
-       "ms-fabric-mcp": {
-         "command": "C:\\path\\to\\ms-fabric-mcp\\.venv\\Scripts\\python.exe",
+      "ms-fabric-core-tools-mcp": {
+        "command": "C:\\path\\to\\ms-fabric-core-tools-mcp\\.venv\\Scripts\\python.exe",
          "args": [
-           "C:\\path\\to\\ms-fabric-mcp\\fabric_mcp_stdio.py"
+          "C:\\path\\to\\ms-fabric-core-tools-mcp\\fabric_mcp_stdio.py"
          ],
          "env": {
            "USERPROFILE": "C:\\Users\\YourUsername"
@@ -213,10 +215,10 @@ az account get-access-token --resource https://api.fabric.microsoft.com/
    ```json
    {
      "mcpServers": {
-       "ms-fabric-mcp": {
-         "command": "/path/to/ms-fabric-mcp/.venv/bin/python",
+      "ms-fabric-core-tools-mcp": {
+        "command": "/path/to/ms-fabric-core-tools-mcp/.venv/bin/python",
          "args": [
-           "/path/to/ms-fabric-mcp/fabric_mcp_stdio.py"
+          "/path/to/ms-fabric-core-tools-mcp/fabric_mcp_stdio.py"
          ],
          "env": {
            "HOME": "/home/yourusername"
@@ -389,10 +391,64 @@ Set current table context.
 set_table(table_name="transactions")
 ```
 
+#### `table_preview`
+Preview rows from a Delta table through the SQL endpoint.
+```python
+table_preview(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    table="transactions",
+    limit=25
+)
+```
+
+#### `table_schema`
+Retrieve detailed schema and metadata for a table.
+```python
+table_schema(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    table="transactions"
+)
+```
+
+#### `describe_history`
+Inspect the Delta transaction log history.
+```python
+describe_history(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    table="transactions",
+    limit=10
+)
+```
+
+#### `optimize_delta`
+Compact files and optionally Z-Order a Delta table.
+```python
+optimize_delta(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    table="transactions",
+    zorder_by=["customer_id", "order_date"]
+)
+```
+
+#### `vacuum_delta`
+Remove old files from Delta storage.
+```python
+vacuum_delta(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    table="transactions",
+    retain_hours=72
+)
+```
+
 ### **5. SQL Operations**
 
 #### `get_sql_endpoint`
-Get SQL endpoint for lakehouse or warehouse.
+Resolve connection details for a lakehouse or warehouse SQL endpoint.
 ```python
 get_sql_endpoint(
     workspace="Analytics-Workspace",
@@ -401,14 +457,36 @@ get_sql_endpoint(
 )
 ```
 
-#### `run_query`
-Execute SQL queries.
+#### `sql_query`
+Execute SQL against Fabric endpoints and receive structured rows.
 ```python
-run_query(
+sql_query(
     workspace="Analytics-Workspace",
     lakehouse="Sales-Data-Lake",
-    query="SELECT COUNT(*) FROM transactions",
+    query="SELECT TOP 25 * FROM dbo.transactions",
     type="lakehouse"
+)
+```
+
+#### `sql_explain`
+Retrieve estimated execution plans for SQL statements.
+```python
+sql_explain(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    query="SELECT customer_id, SUM(amount) FROM dbo.transactions GROUP BY customer_id"
+)
+```
+
+#### `sql_export`
+Export query results to OneLake as CSV or Parquet.
+```python
+sql_export(
+    workspace="Analytics-Workspace",
+    lakehouse="Sales-Data-Lake",
+    query="SELECT * FROM dbo.transactions WHERE order_date >= '2024-01-01'",
+    target_path="Files/exports/transactions_2024.csv",
+    file_format="csv"
 )
 ```
 
@@ -560,7 +638,154 @@ analyze_notebook_performance(
 )
 ```
 
-### **12. Context Management**
+### **12. Pipelines & Dataflows**
+
+#### `pipeline_run`
+Trigger a Fabric pipeline execution.
+```python
+pipeline_run(
+    workspace="Analytics-Workspace",
+    pipeline="Daily-Ingest",
+    parameters={"RunDate": "2024-01-01"}
+)
+```
+
+#### `pipeline_status`
+Check the status of a pipeline run.
+```python
+pipeline_status(
+    workspace="Analytics-Workspace",
+    pipeline="Daily-Ingest",
+    run_id="00000000-0000-0000-0000-000000000000"
+)
+```
+
+#### `pipeline_logs`
+Retrieve diagnostic logs for a pipeline run.
+```python
+pipeline_logs(
+    workspace="Analytics-Workspace",
+    pipeline="Daily-Ingest",
+    run_id="00000000-0000-0000-0000-000000000000"
+)
+```
+
+#### `dataflow_refresh`
+Request a refresh for a Fabric Dataflow Gen2.
+```python
+dataflow_refresh(
+    workspace="Analytics-Workspace",
+    dataflow="Customer-Dim"
+)
+```
+
+### **13. Schedules**
+
+#### `schedule_list`
+List refresh schedules for a workspace or specific item.
+```python
+schedule_list(workspace="Analytics-Workspace")
+
+# or for a specific semantic model / report
+schedule_list(
+    workspace="Analytics-Workspace",
+    item="Sales-Model"
+)
+```
+
+#### `schedule_set`
+Create or update a refresh schedule for an item.
+```python
+schedule_set(
+    workspace="Analytics-Workspace",
+    item="Sales-Model",
+    schedule={
+        "frequency": "Daily",
+        "timeZone": "UTC",
+        "times": ["06:00"]
+    }
+)
+```
+
+### **14. Power BI Artifacts**
+
+#### `semantic_model_refresh`
+Trigger a refresh for a semantic model.
+```python
+semantic_model_refresh(
+    workspace="Analytics-Workspace",
+    model="Sales-Model",
+    refresh_type="Full"
+)
+```
+
+#### `dax_query`
+Execute DAX against a semantic model via XMLA.
+```python
+dax_query(
+    workspace="Analytics-Workspace",
+    dataset="Sales-Model",
+    query="EVALUATE TOPN(10, 'DimCustomer')"
+)
+```
+
+#### `report_export`
+Export a report to PDF or PowerPoint.
+```python
+report_export(
+    workspace="Analytics-Workspace",
+    report="Executive-Summary",
+    format="pdf"
+)
+```
+
+#### `report_params_list`
+List the parameter definitions for a report.
+```python
+report_params_list(
+    workspace="Analytics-Workspace",
+    report="Executive-Summary"
+)
+```
+
+### **15. Microsoft Graph Integration**
+
+#### `graph_user`
+Look up Azure AD profile details.
+```python
+graph_user("someone@contoso.com")
+```
+
+#### `graph_mail`
+Send an email using the signed-in identity.
+```python
+graph_mail(
+    to="owner@contoso.com",
+    subject="Fabric pipeline complete",
+    body="<p>The nightly run succeeded.</p>"
+)
+```
+
+#### `graph_teams_message`
+Post a message to a Teams channel.
+```python
+graph_teams_message(
+    team_id="00000000-0000-0000-0000-000000000000",
+    channel_id="19:channel-id@thread.tacv2",
+    text="Pipeline run finished with status Succeeded."
+)
+```
+
+#### `graph_drive`
+List files in OneDrive or SharePoint.
+```python
+graph_drive(
+    drive_id="00000000-0000-0000-0000-000000000000",
+    path="Shared Documents/Reports"
+)
+```
+
+### **16. Context Management**
 
 #### `clear_context`
 Clear current session context.
@@ -744,7 +969,7 @@ Ensure the environment variables are set in the Claude Desktop config:
 
 2. **Test the server directly:**
    ```bash
-   cd path/to/ms-fabric-mcp
+   cd path/to/ms-fabric-core-tools-mcp
    .venv/Scripts/python fabric_mcp_stdio.py  # Windows
    .venv/bin/python fabric_mcp_stdio.py      # macOS/Linux
    ```
@@ -794,7 +1019,7 @@ Inspired by: https://github.com/Augustab/microsoft_fabric_mcp/tree/main
 ## 📋 Quick Reference Summary
 
 **For your colleague to get started:**
-1. Share this entire `ms-fabric-mcp` directory
+1. Share this entire `ms-fabric-core-tools-mcp` directory
 2. They should follow [SETUP.md](SETUP.md) for quick setup
 3. Or use [INSTALLATION_CHECKLIST.md](INSTALLATION_CHECKLIST.md) for detailed step-by-step
 

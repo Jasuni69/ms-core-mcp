@@ -13,6 +13,196 @@ from typing import Optional, Dict, List, Any
 import base64
 import re
 
+
+async def _resolve_notebook_context(
+    ctx: Context,
+    workspace: Optional[str],
+    notebook: Optional[str],
+    require_notebook: bool = True,
+) -> Dict[str, Any]:
+    if ctx is None:
+        raise ValueError("Context (ctx) must be provided.")
+
+    credential = get_azure_credentials(ctx.client_id, __ctx_cache)
+    fabric_client = FabricApiClient(credential)
+
+    workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+    if not workspace_ref:
+        raise ValueError("Workspace must be specified or set via set_workspace.")
+
+    workspace_name, workspace_id = await fabric_client.resolve_workspace_name_and_id(
+        workspace_ref
+    )
+
+    notebook_ref = notebook or __ctx_cache.get(f"{ctx.client_id}_notebook")
+    notebook_name = None
+    notebook_id = None
+
+    if notebook_ref:
+        notebook_name, notebook_id = await fabric_client.resolve_item_name_and_id(
+            item=notebook_ref,
+            type="Notebook",
+            workspace=workspace_id,
+        )
+    elif require_notebook:
+        raise ValueError(
+            "Notebook must be specified or previously stored in context."
+        )
+
+    return {
+        "credential": credential,
+        "fabric_client": fabric_client,
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "workspace_ref": workspace_ref,
+        "notebook_id": str(notebook_id) if notebook_id else None,
+        "notebook_name": notebook_name,
+    }
+
+
+@mcp.tool()
+async def run_notebook_job(
+    workspace: Optional[str] = None,
+    notebook: Optional[str] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Submit a notebook job run with optional parameters."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, notebook)
+        payload = {
+            "jobParameters": parameters or {},
+        }
+
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs",
+            params=payload,
+            method="post",
+        )
+
+        job_id = (
+            response.get("id")
+            if isinstance(response, dict)
+            else None
+        )
+        if job_id:
+            __ctx_cache[f"{ctx.client_id}_notebook_job"] = job_id
+
+        return {
+            "workspace": context["workspace_name"],
+            "notebook": context["notebook_name"],
+            "job": response,
+        }
+    except Exception as exc:
+        logger.error("Error submitting notebook job: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def get_run_status(
+    workspace: Optional[str] = None,
+    notebook: Optional[str] = None,
+    job_id: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Poll a notebook job run until completion."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, notebook)
+        target_job = job_id or __ctx_cache.get(f"{ctx.client_id}_notebook_job")
+        if not target_job:
+            raise ValueError("Job ID must be provided or stored in context.")
+
+        paths = [
+            f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs/{target_job}",
+            f"workspaces/{context['workspace_id']}/notebookJobs/{target_job}",
+            f"workspaces/{context['workspace_id']}/notebookJobRuns/{target_job}",
+        ]
+
+        last_error = None
+        for path in paths:
+            try:
+                status = await context["fabric_client"]._make_request(endpoint=path)
+                return status
+            except Exception as inner_exc:
+                last_error = inner_exc
+                continue
+
+        raise last_error or ValueError("Unable to retrieve notebook job status.")
+    except Exception as exc:
+        logger.error("Error retrieving notebook job status: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def install_requirements(
+    workspace: Optional[str] = None,
+    requirements_txt: str = "",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Install Python requirements for the workspace Spark environment."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, None, require_notebook=False)
+        payload = {
+            "requirements": requirements_txt,
+        }
+
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/spark/installRequirements",
+            params=payload,
+            method="post",
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error installing requirements: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def install_wheel(
+    workspace: Optional[str] = None,
+    wheel_url: str = "",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Install a wheel package into the workspace Spark environment."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, None, require_notebook=False)
+        payload = {
+            "wheelUrl": wheel_url,
+        }
+
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/spark/installWheel",
+            params=payload,
+            method="post",
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error installing wheel package: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def cluster_info(
+    workspace: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Retrieve Spark cluster information for the workspace."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, None, require_notebook=False)
+        response = await context["fabric_client"]._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/spark/clusterInfo"
+        )
+        return response
+    except Exception as exc:
+        logger.error("Error retrieving cluster info: %s", exc)
+        return {"error": str(exc)}
+
+
 logger = get_logger(__name__)
 
 
@@ -82,6 +272,13 @@ async def create_notebook(
         response = await notebook_client.create_notebook(
             workspace, "test_notebook_2", notebook_content
         )
+
+        if isinstance(response, str):
+            return response  # Propagate detailed error message
+
+        if not isinstance(response, dict):
+            return "Unexpected response when creating notebook."
+
         return response.get("id", "")  # Return the notebook ID or an empty string
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
@@ -107,29 +304,73 @@ async def get_notebook_content(
         if ctx is None:
             raise ValueError("Context (ctx) must be provided.")
 
-        notebook_client = NotebookClient(
-            FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
-        )
-        
-        # Get the notebook details
-        notebook = await notebook_client.get_notebook(workspace, notebook_id)
-        
-        if isinstance(notebook, str):  # Error message
-            return notebook
-            
-        # Extract and decode the notebook content
-        definition = notebook.get("definition", {})
-        parts = definition.get("parts", [])
-        
+        # Prefer the official GetDefinition API which returns definition.parts with the ipynb payload
+        fabric_client = FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
+
+        # Resolve workspace to ID to build the items URL
+        (workspace_name, workspace_id) = await fabric_client.resolve_workspace_name_and_id(workspace)
+
+        # Call the GetDefinition action with format=ipynb to retrieve the .ipynb content
+        try:
+            notebook = await fabric_client._make_request(
+                endpoint=f"workspaces/{workspace_id}/items/{notebook_id}/GetDefinition?format=ipynb",
+                params={},
+                method="POST",
+            )
+        except Exception:
+            notebook = None
+            pass
+
+        if not isinstance(notebook, dict):
+            # Fallback 1: lowercase action name
+            try:
+                notebook = await fabric_client._make_request(
+                    endpoint=f"workspaces/{workspace_id}/items/{notebook_id}/getDefinition?format=ipynb",
+                    params={},
+                    method="POST",
+                )
+            except Exception:
+                notebook = None
+
+        if not isinstance(notebook, dict):
+            # Fallback 2: plain GET with $expand=definition
+            try:
+                notebook = await fabric_client._make_request(
+                    endpoint=f"workspaces/{workspace_id}/items/{notebook_id}",
+                    params={"$expand": "definition"},
+                    method="GET",
+                )
+            except Exception:
+                notebook = None
+
+        if not isinstance(notebook, dict):
+            return f"Unexpected response when fetching notebook definition: type={type(notebook).__name__}, value={str(notebook)[:500]}"
+
+        definition = notebook.get("definition") or {}
+        parts = definition.get("parts") or []
+
+        # Try common cases: ipynb, py, sql, scala
+        preferred_exts = (".ipynb", ".py", ".sql", ".scala")
+
+        def decode_if_base64(payload: str) -> str:
+            try:
+                return base64.b64decode(payload).decode("utf-8")
+            except Exception:
+                return payload  # not base64 or already plain text
+
+        # First pass: return the ipynb if present
         for part in parts:
-            if part.get("path", "").endswith(".ipynb"):
-                payload = part.get("payload", "")
-                if payload:
-                    # Decode base64 content
-                    decoded_content = base64.b64decode(payload).decode("utf-8")
-                    return decoded_content
-        
-        return "No notebook content found in the definition."
+            if str(part.get("path", "")).endswith(".ipynb") and part.get("payload"):
+                return decode_if_base64(part["payload"])
+
+        # Second pass: return the first supported text part
+        for part in parts:
+            path = str(part.get("path", ""))
+            if path.endswith(preferred_exts) and part.get("payload"):
+                return decode_if_base64(part["payload"])
+
+        # Fallback: return the raw definition JSON for diagnostics
+        return json.dumps(definition)
         
     except Exception as e:
         logger.error(f"Error getting notebook content: {str(e)}")
