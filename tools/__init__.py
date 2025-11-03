@@ -1,6 +1,6 @@
-from tools.workspace import set_workspace, list_workspaces
-from tools.warehouse import set_warehouse, list_warehouses
-from tools.lakehouse import set_lakehouse, list_lakehouses
+from tools.workspace import set_workspace, list_workspaces, create_workspace
+from tools.warehouse import set_warehouse, list_warehouses, create_warehouse
+from tools.lakehouse import set_lakehouse, list_lakehouses, create_lakehouse
 from tools.table import (
     set_table,
     list_tables,
@@ -72,10 +72,13 @@ from tools.sql_endpoint import get_sql_endpoint as get_sql_endpoint_tool
 __all__ = [
     "set_workspace",
     "list_workspaces",
+    "create_workspace",
     "set_warehouse",
     "list_warehouses",
+    "create_warehouse",
     "set_lakehouse",
     "list_lakehouses",
+    "create_lakehouse",
     "set_table",
     "list_tables",
     "get_lakehouse_table_schema",
