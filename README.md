@@ -1019,6 +1019,47 @@ The analysis tools provide:
 - **Scoring system** (0-100) for code quality
 - **Fabric compatibility** assessment
 
+## ⚠️ Known Limitations
+
+### API Rate Limits
+Based on [Microsoft Fabric API throttling documentation](https://learn.microsoft.com/en-us/rest/api/fabric/articles/throttling):
+- **50 requests/minute/user** - Fabric Public APIs (returns HTTP 429 when exceeded)
+- **120 queries/minute/user** - Power BI query APIs
+- **200 requests/hour** - Admin APIs
+- These limits **cannot be increased** - implement retry logic with exponential backoff
+
+### Notebook Operations
+- **Lakehouse attachment requires manual UI setup** - Cannot attach lakehouses to notebooks via API ([Reference](https://learn.microsoft.com/en-us/fabric/data-engineering/notebook-public-api))
+- **Workaround:** Attach lakehouse manually in Fabric UI (one-time setup per notebook)
+- **Alternative:** Specify `defaultLakehouse` parameter during notebook **execution** (not creation)
+
+### SQL Endpoint & Delta Lake
+Based on [Delta table maintenance documentation](https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-table-maintenance):
+- **SQL endpoint is read-only** - Cannot execute DDL/DML commands
+- **Delta Lake commands require Spark SQL:**
+  - `OPTIMIZE` - Use in notebooks: `spark.sql("OPTIMIZE table_name ZORDER BY (column)")`
+  - `VACUUM` - Use in notebooks: `spark.sql("VACUUM table_name RETAIN 168 HOURS")`
+  - `DESCRIBE HISTORY` - Use in notebooks: `spark.sql("DESCRIBE HISTORY table_name")`
+- **VACUUM minimum retention: 7 days** (default, configurable but impacts time travel)
+- **SQL endpoint sync delay:** Newly created Delta tables may take 5-10 minutes to appear
+
+### Power BI Reports
+- **Cannot create or edit reports via API** - Must use Power BI Desktop or Power BI Service
+- **Available operations:** List reports, export to PDF/PowerPoint, view parameters
+- **Not available:** Create reports, modify visuals/pages, rebind to different datasets
+- **Export limit:** 250 MB per report
+
+### Workspace & Resource Limits
+- **1,000 users/groups maximum** per workspace (applies to both UI and API)
+- **Library upload limit: 200 MB** maximum file size per request
+- **ODBC Driver required** for `sql_query`, `table_preview` tools ([Download ODBC Driver 18](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server))
+
+### Workarounds & Best Practices
+- **For Delta operations:** Use PySpark notebooks instead of SQL endpoint
+- **For rate limiting:** Implement exponential backoff and batch operations where possible
+- **For lakehouse attachment:** Manual UI setup is required (one-time per notebook)
+- **For large reports:** Export in smaller segments or use paginated reports
+
 ## 📚 Additional Resources
 
 - **[SETUP.md](SETUP.md)** - Quick setup guide for colleagues (5-minute version)
