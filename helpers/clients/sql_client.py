@@ -91,11 +91,58 @@ async def get_sql_endpoint(
             lakehouse_obj = await lakehouse_client.get_lakehouse(
                 workspace=workspace, lakehouse=resource_id
             )
+            
+            # Try to get connection string from lakehouse properties first
             connection_string = (
                 lakehouse_obj.get("properties", {})
                 .get("sqlEndpointProperties", {})
                 .get("connectionString")
             )
+            
+            # If not found, try to find and query the SQLEndpoint item
+            if not connection_string:
+                logger.info(f"sqlEndpointProperties not found in lakehouse, looking for SQLEndpoint item...")
+                items = await client.get_items(workspace_id=workspace_id)
+                sql_endpoint = None
+                
+                # Find the SQLEndpoint item with matching name
+                for item in items:
+                    if item.get("type") == "SQLEndpoint" and item.get("displayName") == resource_name:
+                        sql_endpoint = item
+                        break
+                
+                if sql_endpoint:
+                    logger.info(f"Found SQLEndpoint item: {sql_endpoint['id']}")
+                    # Get the SQLEndpoint details
+                    sql_endpoint_details = await client.get_item(
+                        workspace_id=workspace_id,
+                        item_id=sql_endpoint["id"],
+                        item_type="sqlendpoint"
+                    )
+                    connection_string = (
+                        sql_endpoint_details.get("properties", {})
+                        .get("connectionString")
+                    )
+                    if connection_string:
+                        logger.info("Successfully retrieved connection string from SQLEndpoint item")
+                    # Fallback: try generic items endpoint if typed endpoint didn't include properties
+                    if not connection_string:
+                        try:
+                            generic_item = await client._make_request(
+                                endpoint=f"workspaces/{workspace_id}/items/{sql_endpoint['id']}"
+                            )
+                            connection_string = (
+                                generic_item.get("properties", {}).get("connectionString")
+                                or generic_item.get("properties", {})
+                                .get("sqlEndpointProperties", {})
+                                .get("connectionString")
+                            )
+                            if connection_string:
+                                logger.info("Retrieved connection string from generic items endpoint")
+                        except Exception as e:
+                            logger.warning(f"Fallback generic items endpoint failed: {e}")
+                else:
+                    logger.warning(f"No SQLEndpoint item found for lakehouse '{resource_name}'")
         elif type and type.lower() == "warehouse":
             warehouse_client = WarehouseClient(client)
             resource_name, resource_id = await client.resolve_item_name_and_id(
@@ -114,7 +161,21 @@ async def get_sql_endpoint(
         if not connection_string:
             return None, None
 
-        server, database = _parse_connection_string(connection_string)
+        # Check if connection_string is just a server name (no semicolons)
+        # This is what Fabric API returns for lakehouses
+        if ";" not in connection_string:
+            # It's just a server hostname
+            server = connection_string
+            # For lakehouses, the database name is the lakehouse ID
+            database = resource_id if type and type.lower() == "lakehouse" else None
+            if not database:
+                logger.error(f"Cannot determine database name for {type}")
+                return None, None
+            logger.info(f"Parsed server from hostname: {server}, database: {database}")
+        else:
+            # It's a full connection string, parse it
+            server, database = _parse_connection_string(connection_string)
+
         return resource_name, {
             "workspaceId": workspace_id,
             "resourceId": resource_id,

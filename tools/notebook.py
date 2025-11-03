@@ -65,27 +65,54 @@ async def run_notebook_job(
     workspace: Optional[str] = None,
     notebook: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    configuration: Optional[Dict[str, Any]] = None,
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Submit a notebook job run with optional parameters."""
+    """Submit a notebook job run with optional parameters and configuration."""
 
     try:
         context = await _resolve_notebook_context(ctx, workspace, notebook)
-        payload = {
-            "jobParameters": parameters or {},
+
+        # Preferred endpoint per official docs: items job instances
+        payload_items = {
+            "parameters": parameters or {},
         }
+        if configuration:
+            payload_items["configuration"] = configuration
 
-        response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs",
-            params=payload,
-            method="post",
+        preferred_endpoint = (
+            f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances"
         )
 
-        job_id = (
-            response.get("id")
-            if isinstance(response, dict)
-            else None
-        )
+        last_error: Exception | None = None
+        response = None
+        for endpoint, method, payload in [
+            (preferred_endpoint, "post", payload_items),
+            # Fallback older or alternate endpoints
+            (
+                f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs",
+                "post",
+                {"jobParameters": parameters or {}},
+            ),
+        ]:
+            try:
+                response = await context["fabric_client"]._make_request(
+                    endpoint=endpoint,
+                    params=payload,
+                    method=method,
+                )
+                break
+            except Exception as inner_exc:
+                last_error = inner_exc
+                continue
+
+        if response is None:
+            raise last_error or ValueError("Failed to submit notebook job")
+
+        # Prefer job instance id
+        job_id = None
+        if isinstance(response, dict):
+            job_id = response.get("id") or response.get("jobInstanceId") or response.get("jobId")
         if job_id:
             __ctx_cache[f"{ctx.client_id}_notebook_job"] = job_id
 
@@ -115,6 +142,9 @@ async def get_run_status(
             raise ValueError("Job ID must be provided or stored in context.")
 
         paths = [
+            # Preferred items job instances endpoint
+            f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}",
+            # Fallbacks
             f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs/{target_job}",
             f"workspaces/{context['workspace_id']}/notebookJobs/{target_job}",
             f"workspaces/{context['workspace_id']}/notebookJobRuns/{target_job}",
@@ -132,6 +162,58 @@ async def get_run_status(
         raise last_error or ValueError("Unable to retrieve notebook job status.")
     except Exception as exc:
         logger.error("Error retrieving notebook job status: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def cancel_notebook_job(
+    workspace: Optional[str] = None,
+    notebook: Optional[str] = None,
+    job_id: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Cancel a running notebook job instance."""
+
+    try:
+        context = await _resolve_notebook_context(ctx, workspace, notebook)
+        target_job = job_id or __ctx_cache.get(f"{ctx.client_id}_notebook_job")
+        if not target_job:
+            raise ValueError("Job ID must be provided or stored in context.")
+
+        candidate_requests = [
+            (
+                f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}/cancel",
+                "post",
+                {},
+            ),
+            (
+                f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}:cancel",
+                "post",
+                {},
+            ),
+            (
+                f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs/{target_job}/cancel",
+                "post",
+                {},
+            ),
+        ]
+
+        last_error = None
+        for endpoint, method, payload in candidate_requests:
+            try:
+                resp = await context["fabric_client"]._make_request(
+                    endpoint=endpoint,
+                    params=payload,
+                    method=method,
+                )
+                return {"canceled": True, "response": resp}
+            except Exception as inner_exc:
+                last_error = inner_exc
+                continue
+
+        raise last_error or ValueError("Unable to cancel notebook job.")
+    except Exception as exc:
+        logger.error("Error canceling notebook job: %s", exc)
         return {"error": str(exc)}
 
 
@@ -221,10 +303,15 @@ async def list_notebooks(workspace: Optional[str] = None, ctx: Context = None) -
         if ctx is None:
             raise ValueError("Context (ctx) must be provided.")
 
+        # Retrieve workspace from context if not provided
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            raise ValueError("Workspace must be specified or set via set_workspace.")
+
         notebook_client = NotebookClient(
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
-        return await notebook_client.list_notebooks(workspace)
+        return await notebook_client.list_notebooks(workspace_ref)
     except Exception as e:
         logger.error(f"Error listing notebooks: {str(e)}")
         return f"Error listing notebooks: {str(e)}"
@@ -273,13 +360,15 @@ async def create_notebook(
             workspace, "test_notebook_2", notebook_content
         )
 
-        if isinstance(response, str):
-            return response  # Propagate detailed error message
+        if isinstance(response, dict):
+            # Prefer ID when available; otherwise return message
+            if response.get("id"):
+                return response.get("id")
+            if response.get("error"):
+                return response["error"]
+            return json.dumps(response)
 
-        if not isinstance(response, dict):
-            return "Unexpected response when creating notebook."
-
-        return response.get("id", "")  # Return the notebook ID or an empty string
+        return str(response)
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
         return f"Error creating notebook: {str(e)}"
@@ -369,7 +458,19 @@ async def get_notebook_content(
             if path.endswith(preferred_exts) and part.get("payload"):
                 return decode_if_base64(part["payload"])
 
-        # Fallback: return the raw definition JSON for diagnostics
+        # Fallback: if no parts found, the notebook may be empty or newly created
+        # Return a minimal valid notebook structure
+        if not parts:
+            logger.info(f"No content parts found in notebook '{notebook_id}'. Returning empty notebook structure.")
+            empty_notebook = {
+                "cells": [],
+                "metadata": {},
+                "nbformat": 4,
+                "nbformat_minor": 5
+            }
+            return json.dumps(empty_notebook)
+        
+        # If we have parts but couldn't decode any, return the raw definition for diagnostics
         return json.dumps(definition)
         
     except Exception as e:
@@ -1102,15 +1203,28 @@ async def update_notebook_cell(
         if current_content.startswith("Error"):
             return current_content
         
+        # Validate content is not empty
+        if not current_content or current_content.strip() == "":
+            return "Error: Notebook content is empty. The notebook may not have been initialized properly."
+        
         # Parse the notebook JSON
-        notebook_data = json.loads(current_content)
+        try:
+            notebook_data = json.loads(current_content)
+        except json.JSONDecodeError as je:
+            logger.error(f"Failed to parse notebook JSON: {je}")
+            logger.error(f"Content received: {current_content[:500]}")
+            return f"Error: Failed to parse notebook content as JSON. Content may be malformed or empty. Error: {str(je)}"
+        
         cells = notebook_data.get("cells", [])
         
-        if cell_index >= len(cells):
-            return f"Cell index {cell_index} is out of range. Notebook has {len(cells)} cells."
+        # Ensure cells is a list
+        if not isinstance(cells, list):
+            logger.warning(f"Notebook cells is not a list: {type(cells)}. Initializing empty cells.")
+            cells = []
+            notebook_data["cells"] = cells
         
-        # Update the cell
-        cells[cell_index] = {
+        # Create new cell object
+        new_cell = {
             "cell_type": cell_type,
             "source": cell_content.split('\n') if isinstance(cell_content, str) else cell_content,
             "execution_count": None,
@@ -1118,16 +1232,69 @@ async def update_notebook_cell(
             "metadata": {}
         }
         
+        # If cell_index is beyond current cells, pad with empty cells or add at end
+        if cell_index >= len(cells):
+            if cell_index == len(cells):
+                # Adding a new cell at the end
+                logger.info(f"Adding new cell at index {cell_index}")
+                cells.append(new_cell)
+            else:
+                return f"Cell index {cell_index} is out of range. Notebook has {len(cells)} cells. To add a new cell, use index {len(cells)}."
+        else:
+            # Update existing cell
+            logger.info(f"Updating existing cell at index {cell_index}")
+            cells[cell_index] = new_cell
+        
         # Update the notebook
         updated_content = json.dumps(notebook_data, indent=2)
         
-        notebook_client = NotebookClient(
-            FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
-        )
-        
-        # This would require implementing an update method in the client
-        # For now, return a success message indicating what would be updated
-        return f"Cell {cell_index} updated successfully with {cell_type} content (length: {len(cell_content)} characters)"
+        # Build updateDefinition payload
+        fabric_client = FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
+        (workspace_name, workspace_id) = await fabric_client.resolve_workspace_name_and_id(workspace)
+        # Use notebook name when available to form the ipynb path
+        try:
+            item_meta = await fabric_client.get_item(
+                item_id=notebook_id,
+                workspace_id=workspace_id,
+                item_type="item",
+            )
+            display_name = item_meta.get("displayName") or "notebook"
+        except Exception:
+            display_name = "notebook"
+
+        ipynb_path = f"{display_name}.ipynb"
+        payload = {
+            "definition": {
+                "format": "ipynb",
+                "parts": [
+                    {
+                        "path": ipynb_path,
+                        "payload": base64.b64encode(updated_content.encode("utf-8")).decode("utf-8"),
+                        "payloadType": "InlineBase64",
+                    }
+                ],
+            }
+        }
+
+        # Prefer lower-case action, fallback to capitalized
+        endpoints = [
+            f"workspaces/{workspace_id}/items/{notebook_id}/updateDefinition",
+            f"workspaces/{workspace_id}/items/{notebook_id}/UpdateDefinition",
+        ]
+        last_error = None
+        for ep in endpoints:
+            try:
+                await fabric_client._make_request(
+                    endpoint=ep,
+                    method="post",
+                    params=payload,
+                )
+                return f"Cell {cell_index} updated successfully."
+            except Exception as inner_exc:
+                last_error = inner_exc
+                continue
+
+        raise last_error or ValueError("Failed to update notebook definition")
         
     except Exception as e:
         logger.error(f"Error updating notebook cell: {str(e)}")

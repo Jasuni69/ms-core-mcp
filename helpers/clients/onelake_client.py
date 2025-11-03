@@ -71,7 +71,7 @@ class OneLakeClient:
         lakehouse_id: str,
         path: Optional[str] = None,
     ) -> List[Dict[str, Optional[str]]]:
-        async def _inner():
+        def _inner():
             onelake_path, full_path = self._parse_path(workspace_id, lakehouse_id, path)
             fs_client = self._get_file_system_client(onelake_path.workspace_id)
 
@@ -108,7 +108,7 @@ class OneLakeClient:
         lakehouse_id: str,
         path: str,
     ) -> Dict[str, str]:
-        async def _inner():
+        def _inner():
             onelake_path, full_path = self._parse_path(workspace_id, lakehouse_id, path)
             fs_client = self._get_file_system_client(onelake_path.workspace_id)
             file_client = fs_client.get_file_client(full_path)
@@ -144,7 +144,7 @@ class OneLakeClient:
         data: bytes,
         overwrite: bool = True,
     ) -> Dict[str, str]:
-        async def _inner():
+        def _inner():
             onelake_path, full_path = self._parse_path(workspace_id, lakehouse_id, path)
             fs_client = self._get_file_system_client(onelake_path.workspace_id)
 
@@ -177,7 +177,7 @@ class OneLakeClient:
         path: str,
         recursive: bool = False,
     ) -> Dict[str, str]:
-        async def _inner():
+        def _inner():
             onelake_path, full_path = self._parse_path(workspace_id, lakehouse_id, path)
             fs_client = self._get_file_system_client(onelake_path.workspace_id)
 

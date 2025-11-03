@@ -12,8 +12,9 @@ class NotebookClient:
 
     async def list_notebooks(self, workspace: str):
         """List all notebooks in a workspace."""
+        # Accept workspace name or ID
         if not _is_valid_uuid(workspace):
-            raise ValueError("Invalid workspace ID.")
+            (_, workspace) = await self.client.resolve_workspace_name_and_id(workspace)
         notebooks = await self.client.get_notebooks(workspace)
 
         if not notebooks:
@@ -29,13 +30,18 @@ class NotebookClient:
         return markdown
 
     async def get_notebook(self, workspace: str, notebook_id: str) -> Dict[str, Any]:
-        """Get a specific notebook by ID."""
+        """Get a specific notebook by ID or name."""
         if not _is_valid_uuid(workspace):
-            raise ValueError("Invalid workspace ID.")
-        if not _is_valid_uuid(notebook_id):
-            raise ValueError("Invalid notebook ID.")
+            (_, workspace) = await self.client.resolve_workspace_name_and_id(workspace)
 
-        notebook = await self.client.get_notebook(workspace, notebook_id)
+        # Allow passing notebook name; resolve to ID when needed
+        resolved_notebook_id = notebook_id
+        if not _is_valid_uuid(notebook_id):
+            resolved_notebook_id = await self.client.resolve_item_id(
+                item=notebook_id, type="Notebook", workspace=workspace
+            )
+
+        notebook = await self.client.get_notebook(workspace, str(resolved_notebook_id))
 
         if not notebook:
             return (
@@ -49,14 +55,16 @@ class NotebookClient:
     ) -> Dict[str, Any]:
         """Create a new notebook."""
         try:
-            workspace, workspace_id = await self.client.resolve_workspace_name_and_id(
+            ws_name, workspace_id = await self.client.resolve_workspace_name_and_id(
                 workspace
             )
             if not workspace_id:
                 raise ValueError("Invalid workspace ID.")
-            
-            logger.info(f"Creating notebook '{notebook_name}' in workspace '{workspace}' (ID: {workspace_id}).")
-            
+
+            logger.info(
+                f"Creating notebook '{notebook_name}' in workspace '{ws_name}' (ID: {workspace_id})."
+            )
+
             try:
                 response = await self.client.create_notebook(
                     workspace_id=workspace_id,
@@ -65,15 +73,37 @@ class NotebookClient:
                     content=content,
                 )
             except Exception as e:
-                error_msg = f"Failed to create notebook '{notebook_name}' in workspace '{workspace}': {str(e)}"
+                error_msg = (
+                    f"Failed to create notebook '{notebook_name}' in workspace '{ws_name}': {str(e)}"
+                )
                 logger.error(error_msg)
-                return error_msg
+                return {"error": error_msg}
 
-            
-            logger.info(f"Successfully created notebook '{notebook_name}' with ID: {response['id']}")
-            return response
-            
+            # Check if response is None
+            if response is None:
+                logger.warning(f"Notebook creation returned None response. The notebook may have been created successfully.")
+                # Try to fetch the notebook by name to confirm
+                try:
+                    notebooks = await self.client.get_notebooks(workspace_id)
+                    for nb in notebooks:
+                        if nb.get("displayName") == notebook_name:
+                            logger.info(f"Found created notebook '{notebook_name}' with ID: {nb['id']}")
+                            return nb
+                except Exception as fetch_error:
+                    logger.warning(f"Could not verify notebook creation: {fetch_error}")
+                return {"error": "Notebook creation returned None response"}
+
+            if isinstance(response, dict) and response.get("id"):
+                logger.info(
+                    f"Successfully created notebook '{notebook_name}' with ID: {response['id']}"
+                )
+                return response
+
+            # If the API returned an operation payload or unexpected shape
+            logger.warning(f"Notebook creation returned unexpected response: {response}")
+            return {"message": "Notebook creation submitted", "response": response}
+
         except Exception as e:
             error_msg = f"Error creating notebook '{notebook_name}': {str(e)}"
             logger.error(error_msg)
-            return error_msg
+            return {"error": error_msg}

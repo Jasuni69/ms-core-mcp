@@ -40,9 +40,12 @@ async def list_warehouses(workspace: Optional[str] = None, ctx: Context = None) 
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
 
-        warehouses = await client.list_warehouses(
-            workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"]
-        )
+        # Retrieve workspace from context if not provided
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            return "Workspace not set. Please set a workspace using the 'set_workspace' command."
+
+        warehouses = await client.list_warehouses(workspace_ref)
 
         return warehouses
 
@@ -55,6 +58,7 @@ async def create_warehouse(
     name: str,
     workspace: Optional[str] = None,
     description: Optional[str] = None,
+    folder_id: Optional[str] = None,
     ctx: Context = None,
 ) -> str:
     """Create a new warehouse in a Fabric workspace.
@@ -72,19 +76,26 @@ async def create_warehouse(
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
 
+        # Retrieve workspace from context if not provided
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            return "Workspace not set. Please set a workspace using the 'set_workspace' command."
+
         response = await client.create_warehouse(
             name=name,
-            workspace=workspace
-            if workspace
-            else __ctx_cache[f"{ctx.client_id}_workspace"],
+            workspace=workspace_ref,
             description=description,
+            folder_id=folder_id,
         )
+
+        if response is None:
+            return "Error: Warehouse creation returned None response. The warehouse may have been created - please check the workspace."
 
         if isinstance(response, str):
             return response
 
         if not isinstance(response, dict):
-            return "Unexpected response when creating warehouse."
+            return f"Unexpected response when creating warehouse: {type(response).__name__}"
 
         warehouse_id = response.get("id")
         display_name = response.get("displayName", name)
@@ -92,7 +103,7 @@ async def create_warehouse(
         if warehouse_id:
             return f"Warehouse '{display_name}' created successfully with ID: {warehouse_id}."
 
-        return f"Warehouse '{display_name}' created, but no ID was returned."
+        return f"Warehouse '{display_name}' created, but no ID was returned. Response: {response}"
 
     except Exception as e:
         return f"Error creating warehouse: {str(e)}"

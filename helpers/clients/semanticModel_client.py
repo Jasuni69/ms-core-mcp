@@ -8,12 +8,17 @@ class SemanticModelClient:
     def __init__(self, client: FabricApiClient):
         self.client = client
 
-    async def list_semantic_models(self, workspace_id: str):
+    async def list_semantic_models(self, workspace: str):
         """List all semantic models in a workspace."""
+        # Resolve workspace name to ID if needed
+        workspace_name, workspace_id = await self.client.resolve_workspace_name_and_id(workspace)
+
         models = await self.client.get_semantic_models(workspace_id)
 
         if not models:
-            return f"No semantic models found in workspace '{workspace_id}'."
+            # Return empty list instead of error string for consistent iteration
+            logger.info(f"No semantic models found in workspace '{workspace_name}'.")
+            return []
 
         return models
 

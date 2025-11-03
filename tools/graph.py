@@ -1,5 +1,7 @@
+import html
 import json
-from typing import Any, Dict, Optional
+import os
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 
@@ -10,6 +12,30 @@ from mcp.server.fastmcp import Context
 
 
 logger = get_logger(__name__)
+
+
+def _normalise_channel_message_content(
+    content: str, content_type: str = "html"
+) -> Tuple[str, str]:
+    """Prepare Teams channel message content for Graph."""
+
+    normalised_type = (content_type or "html").lower()
+    if normalised_type not in {"html", "text", "markdown"}:
+        raise ValueError(
+            "Unsupported content_type. Must be one of 'html', 'text', or 'markdown'."
+        )
+
+    if normalised_type == "html":
+        stripped = content.strip()
+        if stripped.startswith("<") and stripped.endswith(">"):
+            return normalised_type, stripped
+
+        safe_html = html.escape(content)
+        safe_html = safe_html.replace("\r\n", "\n").replace("\r", "\n")
+        safe_html = safe_html.replace("\n", "<br>")
+        return normalised_type, f"<div>{safe_html}</div>"
+
+    return normalised_type, content
 
 
 def _graph_headers(ctx: Context) -> Dict[str, str]:
@@ -100,16 +126,30 @@ async def graph_teams_message(
     team_id: str,
     channel_id: str,
     text: str,
-    ctx: Context,
+    content_type: str = "html",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Post a message to a Teams channel via Microsoft Graph."""
+    """Post a message to a Teams channel via Microsoft Graph.
+
+    Args:
+        team_id: The target Microsoft Teams team identifier.
+        channel_id: The channel identifier within the team.
+        text: The message body to send.
+        content_type: Graph contentType, defaults to "html". Can be "html", "text", "markdown".
+        ctx: FastMCP context.
+    """
 
     try:
+        if ctx is None:
+            raise ValueError("Context (ctx) must be provided.")
+
+        normalised_type, message_body = _normalise_channel_message_content(text, content_type)
+
         url = f"https://graph.microsoft.com/v1.0/teams/{team_id}/channels/{channel_id}/messages"
         payload = {
             "body": {
-                "contentType": "html",
-                "content": text,
+                "contentType": normalised_type,
+                "content": message_body,
             }
         }
         return _graph_request(ctx, "post", url, payload)
@@ -142,4 +182,122 @@ async def graph_drive(
         return {"error": str(exc)}
 
 
+
+
+# Alias management for Teams channels
+def _aliases_file_path() -> str:
+    # Store aliases at the repository root for persistence
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    return os.path.join(root_dir, "teams_channel_aliases.json")
+
+
+def _load_aliases() -> Dict[str, Dict[str, str]]:
+    path = _aliases_file_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            return {}
+    except Exception:
+        # If file is corrupt/unreadable, start fresh rather than failing tool calls
+        return {}
+
+
+def _save_aliases(aliases: Dict[str, Dict[str, str]]) -> None:
+    path = _aliases_file_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(aliases, f, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+async def save_teams_channel_alias(
+    alias: str,
+    team_id: str,
+    channel_id: str,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Create or update a named alias for a Teams channel (team_id + channel_id)."""
+
+    try:
+        if ctx is None:
+            raise ValueError("Context (ctx) must be provided.")
+
+        normalised = (alias or "").strip().lower()
+        if not normalised:
+            raise ValueError("Alias must be a non-empty string.")
+
+        aliases = _load_aliases()
+        aliases[normalised] = {"team_id": team_id, "channel_id": channel_id}
+        _save_aliases(aliases)
+        return {"alias": normalised, "team_id": team_id, "channel_id": channel_id}
+    except Exception as exc:
+        logger.error("Error saving Teams channel alias: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def list_teams_channel_aliases(ctx: Context = None) -> Dict[str, Any]:
+    """List all saved Teams channel aliases."""
+
+    try:
+        if ctx is None:
+            raise ValueError("Context (ctx) must be provided.")
+        return {"aliases": _load_aliases()}
+    except Exception as exc:
+        logger.error("Error listing Teams channel aliases: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def delete_teams_channel_alias(alias: str, ctx: Context = None) -> Dict[str, Any]:
+    """Delete a saved Teams channel alias."""
+
+    try:
+        if ctx is None:
+            raise ValueError("Context (ctx) must be provided.")
+        normalised = (alias or "").strip().lower()
+        aliases = _load_aliases()
+        if normalised in aliases:
+            removed = aliases.pop(normalised)
+            _save_aliases(aliases)
+            return {"deleted": normalised, "value": removed}
+        return {"deleted": None}
+    except Exception as exc:
+        logger.error("Error deleting Teams channel alias: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def graph_teams_message_alias(
+    alias: str,
+    text: str,
+    content_type: str = "html",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Post a message to a Teams channel using a saved alias.
+
+    Resolves the alias into `(team_id, channel_id)` and forwards to `graph_teams_message`.
+    """
+
+    try:
+        if ctx is None:
+            raise ValueError("Context (ctx) must be provided.")
+        normalised = (alias or "").strip().lower()
+        aliases = _load_aliases()
+        if normalised not in aliases:
+            raise ValueError(f"Alias not found: {normalised}")
+        mapping = aliases[normalised]
+        return await graph_teams_message(
+            mapping["team_id"],
+            mapping["channel_id"],
+            text,
+            content_type,
+            ctx,
+        )
+    except Exception as exc:
+        logger.error("Error posting Teams message via alias: %s", exc)
+        return {"error": str(exc)}
 

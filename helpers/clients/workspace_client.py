@@ -26,3 +26,18 @@ class WorkspaceClient:
     async def resolve_workspace(self, workspace_name: str):
         """Resolve workspace name to workspace ID."""
         return await self.client.resolve_workspace_name_and_id(workspace=workspace_name)
+
+    async def create_workspace(
+        self,
+        display_name: str,
+        capacity_id: str | None = None,
+        description: str | None = None,
+        domain_id: str | None = None,
+    ):
+        """Create a new workspace."""
+        return await self.client.create_workspace(
+            display_name=display_name,
+            capacity_id=capacity_id,
+            description=description,
+            domain_id=domain_id,
+        )

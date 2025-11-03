@@ -13,7 +13,9 @@ class ReportClient:
         reports = await self.client.get_reports(workspace_id)
 
         if not reports:
-            return f"No reports found in workspace '{workspace_id}'."
+            # Return empty list instead of error string for consistent iteration
+            logger.info(f"No reports found in workspace '{workspace_id}'.")
+            return []
 
         return reports
 

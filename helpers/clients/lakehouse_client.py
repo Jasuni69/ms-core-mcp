@@ -12,14 +12,15 @@ class LakehouseClient:
 
     async def list_lakehouses(self, workspace: str):
         """List all lakehouses in a workspace."""
-        if not _is_valid_uuid(workspace):
-            raise ValueError("Invalid workspace ID.")
-        lakehouses = await self.client.get_lakehouses(workspace)
+        # Resolve workspace name to ID if needed
+        workspace_name, workspace_id = await self.client.resolve_workspace_name_and_id(workspace)
+
+        lakehouses = await self.client.get_lakehouses(workspace_id)
 
         if not lakehouses:
-            return f"No lakehouses found in workspace '{workspace}'."
+            return f"No lakehouses found in workspace '{workspace_name or workspace}'."
 
-        markdown = f"# Lakehouses in workspace '{workspace}'\n\n"
+        markdown = f"# Lakehouses in workspace '{workspace_name or workspace}'\n\n"
         markdown += "| ID | Name |\n"
         markdown += "|-----|------|\n"
 
@@ -34,14 +35,14 @@ class LakehouseClient:
         lakehouse: str,
     ) -> Optional[Dict[str, Any]]:
         """Get details of a specific lakehouse."""
-        if not _is_valid_uuid(workspace):
-            raise ValueError("Invalid workspace ID.")
+        # Resolve workspace name to ID if needed
+        _, workspace_id = await self.client.resolve_workspace_name_and_id(workspace)
 
         if not lakehouse:
             raise ValueError("Lakehouse name cannot be empty.")
 
         response = await self.client.get_item(
-            workspace_id=workspace, item_id=lakehouse, item_type="lakehouse"
+            workspace_id=workspace_id, item_id=lakehouse, item_type="lakehouse"
         )
         logger.info(f"Lakehouse details: {response}")
         return response
@@ -57,14 +58,20 @@ class LakehouseClient:
         name: str,
         workspace: str,
         description: Optional[str] = None,
+        folder_id: Optional[str] = None,
     ):
         """Create a new lakehouse."""
+        # Resolve workspace to ID if a name was provided
         if not _is_valid_uuid(workspace):
-            raise ValueError("Invalid workspace ID.")
+            (_, workspace) = await self.client.resolve_workspace_name_and_id(workspace)
 
         if not name:
             raise ValueError("Lakehouse name cannot be empty.")
 
         return await self.client.create_item(
-            name=name, workspace=workspace, description="description", type="Lakehouse"
+            name=name,
+            workspace=workspace,
+            description=description,
+            type="Lakehouse",
+            folder_id=folder_id,
         )

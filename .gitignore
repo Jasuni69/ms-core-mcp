@@ -12,3 +12,16 @@ wheels/
 # Ruff cache
 .ruff_cache/
 Inprogress
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# Claude Code personal settings
+.claude/
+
+# Local MCP configuration (contains user-specific paths)
+.mcp.json
+
+# Debug and temporary files
+tests/debug_scripts/

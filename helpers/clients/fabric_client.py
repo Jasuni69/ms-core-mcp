@@ -99,17 +99,36 @@ class FabricApiClient:
                         timeout=120,
                     )
     
-                # LRO support: check for 202 and Operation-Location
+                # LRO support: check for 202 and Operation-Location/Location
                 if lro and response.status_code == 202:
-                    op_url = response.headers.get(
-                        "Operation-Location"
-                    ) or response.headers.get("operation-location")
+                    op_url = (
+                        response.headers.get("Operation-Location")
+                        or response.headers.get("operation-location")
+                        or response.headers.get("Location")
+                        or response.headers.get("location")
+                    )
                     if not op_url:
-                        logger.error("LRO: No Operation-Location header found.")
-                        return None
+                        logger.error("LRO: No Operation-Location header found in 202 response.")
+                        logger.error(f"LRO: Response headers: {dict(response.headers)}")
+                        logger.error(f"LRO: Response body: {response.text[:500] if response.text else 'empty'}")
+                        # Try to parse the response body anyway
+                        try:
+                            body = response.json()
+                            logger.info(f"LRO: Returning response body despite missing Operation-Location")
+                            return body
+                        except Exception:
+                            return None
                     logger.info(f"LRO: Polling {op_url} for operation status...")
                     start_time = time.time()
                     while True:
+                        # Respect Retry-After when provided
+                        retry_after_header = response.headers.get("Retry-After") or response.headers.get("retry-after")
+                        retry_after = None
+                        try:
+                            if retry_after_header is not None:
+                                retry_after = int(retry_after_header)
+                        except Exception:
+                            retry_after = None
                         poll_resp = requests.get(
                             op_url, headers=self._get_headers(), timeout=60
                         )
@@ -129,6 +148,17 @@ class FabricApiClient:
                             "completed",
                         ):
                             logger.info("LRO: Operation succeeded.")
+                            # Extract resource details from the polling response
+                            # Try common fields where the created resource details might be
+                            resource = (
+                                poll_data.get("resource") 
+                                or poll_data.get("result")
+                                or poll_data.get("item")
+                            )
+                            if resource and isinstance(resource, dict):
+                                return resource
+                            # If no nested resource, return the poll_data itself
+                            # (some APIs include resource fields at the top level)
                             return poll_data
                         if status in ("Failed", "failed", "Canceled", "canceled"):
                             logger.error(
@@ -138,12 +168,27 @@ class FabricApiClient:
                         if time.time() - start_time > lro_timeout:
                             logger.error("LRO: Polling timed out.")
                             return None
+                        wait_time = retry_after if retry_after is not None else lro_poll_interval
                         logger.debug(
-                            f"LRO: Status {status}, waiting {lro_poll_interval}s..."
+                            f"LRO: Status {status}, waiting {wait_time}s..."
                         )
-                        time.sleep(lro_poll_interval)
+                        time.sleep(wait_time)
                 response.raise_for_status()
-                return response.json()
+                
+                # Handle empty response body
+                if not response.text or response.text.strip() == "":
+                    logger.warning(f"API returned empty response body for {method} {endpoint}")
+                    logger.warning(f"Status code: {response.status_code}")
+                    logger.warning(f"Headers: {dict(response.headers)}")
+                    # Return empty dict to indicate success without body
+                    return {}
+                
+                try:
+                    return response.json()
+                except ValueError as e:
+                    logger.error(f"Failed to parse JSON response: {e}")
+                    logger.error(f"Response text: {response.text[:500]}")
+                    return None
             except requests.RequestException as e:
                 logger.error(f"API call failed: {str(e)}")
                 error_msg = f"API call failed: {str(e)}"
@@ -200,6 +245,35 @@ class FabricApiClient:
     async def get_workspaces(self) -> List[Dict]:
         """Get all available workspaces"""
         return await self._make_request("workspaces", use_pagination=True)
+
+    async def create_workspace(
+        self,
+        display_name: str,
+        capacity_id: Optional[str] = None,
+        description: Optional[str] = None,
+        domain_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a new workspace via POST /v1/workspaces"""
+        if not display_name:
+            raise ValueError("Workspace display name cannot be empty.")
+
+        payload: Dict[str, Any] = {
+            "displayName": display_name,
+        }
+        if capacity_id:
+            payload["capacityId"] = capacity_id
+        if description:
+            payload["description"] = description
+        if domain_id:
+            payload["domainId"] = domain_id
+
+        return await self._make_request(
+            endpoint="workspaces",
+            method="post",
+            params=payload,
+            lro=True,
+            lro_poll_interval=1,
+        )
 
     async def get_lakehouses(self, workspace_id: str) -> List[Dict]:
         """Get all lakehouses in a workspace"""
@@ -395,6 +469,7 @@ class FabricApiClient:
         definition: Optional[dict] = None,
         workspace: Optional[str | UUID] = None,
         lro: Optional[bool] = False,
+        folder_id: Optional[str] = None,
     ):
         """
         Creates an item in a Fabric workspace.
@@ -422,7 +497,12 @@ class FabricApiClient:
             (workspace_name, workspace_id) = await self.resolve_workspace_name_and_id(
                 workspace
             )
-        item_type = item_types.get(type)[0].lower()
+        
+        # Get item type from sempy_labs mapping
+        item_type_mapping = item_types.get(type)
+        if not item_type_mapping:
+            raise ValueError(f"Unknown item type '{type}'. Available types: {list(item_types.keys())}")
+        item_type = item_type_mapping[0].lower()
 
         payload = {
             "displayName": name,
@@ -431,6 +511,8 @@ class FabricApiClient:
             payload["description"] = description
         if definition:
             payload["definition"] = definition
+        if folder_id:
+            payload["folderId"] = folder_id
 
         try:
             response = await self._make_request(
@@ -448,6 +530,11 @@ class FabricApiClient:
                 f"Failed to create item '{name}' of type '{item_type}' in the '{workspace_id}' workspace."
             )        
         
+        # Check if response is None
+        if response is None:
+            logger.error(f"Received None response when creating item '{name}'")
+            raise ValueError(f"Failed to create item '{name}': API returned None response")
+        
         # Check if response contains an error
         if isinstance(response, dict):
             if "error" in response:
@@ -459,6 +546,51 @@ class FabricApiClient:
             if "id" in response:
                 logger.info(f"Successfully created item '{name}' with ID: {response['id']}")
                 return response
+            
+            # If response is empty dict or LRO status, fetch the item by name
+            if lro and (len(response) == 0 or response.get("status") in ("Succeeded", "succeeded", "Completed", "completed")):
+                logger.info(f"LRO completed but no item details in response. Fetching item '{name}' by name...")
+                try:
+                    # Wait a moment for the item to be available - use async sleep
+                    import asyncio
+                    await asyncio.sleep(3)  # Increased wait time to 3 seconds
+                    
+                    # Fetch the item by name
+                    items = await self.get_items(workspace_id=workspace_id, item_type=type)
+                    if not items:
+                        logger.warning(f"get_items returned None/empty for workspace {workspace_id}, type {type}")
+                    elif not isinstance(items, list):
+                        logger.warning(f"get_items returned unexpected type: {type(items).__name__}")
+                    else:
+                        for item in items:
+                            if not isinstance(item, dict):
+                                logger.warning(f"Skipping non-dict item: {type(item).__name__}")
+                                continue
+                            if item.get("displayName") == name:
+                                logger.info(f"Found created item '{name}' with ID: {item['id']}")
+                                return item
+                        
+                        logger.warning(f"Could not find item '{name}' after LRO completion")
+                        logger.warning(f"Available items: {[item.get('displayName') for item in items[:10] if isinstance(item, dict)]}")
+                    
+                    # If we couldn't find the item, still return a success response
+                    # The item was created (LRO succeeded), it just may not be immediately queryable
+                    logger.info(f"LRO succeeded for item '{name}'. Returning success response.")
+                    return {
+                        "displayName": name,
+                        "status": "Created",
+                        "note": "Item created successfully. It may take a moment to appear in listings."
+                    }
+                    
+                except Exception as fetch_error:
+                    logger.warning(f"Failed to fetch item after LRO: {fetch_error}")
+                    # Even if fetching fails, the LRO succeeded, so return success
+                    return {
+                        "displayName": name,
+                        "status": "Created",
+                        "note": "Item created successfully. Verification failed but creation completed.",
+                        "fetch_error": str(fetch_error)
+                    }
             
             # If no ID and no error, log the full response for debugging
             logger.warning(f"Unexpected response format: {response}")
@@ -561,9 +693,17 @@ class FabricApiClient:
             responses = await self._make_request(
                 endpoint="workspaces", use_pagination=True
             )
+            if not responses:
+                raise ValueError(f"Failed to list workspaces - API returned None/empty")
+            if not isinstance(responses, list):
+                raise ValueError(f"Failed to list workspaces - API returned unexpected type: {type(responses).__name__}")
+            
             workspace_id = None
             workspace_name = None
             for r in responses:
+                if not isinstance(r, dict):
+                    logger.warning(f"Skipping non-dict workspace entry: {type(r).__name__}")
+                    continue
                 display_name = r.get("displayName")
                 if display_name == workspace:
                     workspace_name = workspace
@@ -571,21 +711,22 @@ class FabricApiClient:
                     return workspace_name, workspace_id
 
         if workspace_name is None or workspace_id is None:
-            raise ValueError("Workspace not found")
+            raise ValueError(f"Workspace '{workspace}' not found in available workspaces")
 
         return workspace_name, workspace_id
 
     async def resolve_workspace_name(self, workspace_id: Optional[UUID] = None) -> str:
         try:
             response = await self._make_request(endpoint=f"workspaces/{workspace_id}")
-            if not response or "displayName" not in response:
-                raise ValueError(
-                    f"Workspace '{workspace_id}' not found or API response invalid: {response}"
-                )
-        except requests.RequestException:
-            raise ValueError(f"The '{workspace_id}' workspace was not found.")
-
-        return response.get("displayName")
+            if not response:
+                raise ValueError(f"Workspace '{workspace_id}' not found - API returned None/empty response")
+            if not isinstance(response, dict):
+                raise ValueError(f"Workspace '{workspace_id}' API returned unexpected type: {type(response).__name__}")
+            if "displayName" not in response:
+                raise ValueError(f"Workspace '{workspace_id}' not found or API response invalid: {response}")
+            return response.get("displayName")
+        except requests.RequestException as e:
+            raise ValueError(f"The '{workspace_id}' workspace was not found: {str(e)}")
 
     async def get_notebooks(self, workspace_id: str) -> List[Dict]:
         """Get all notebooks in a workspace"""
@@ -635,4 +776,5 @@ class FabricApiClient:
             type="Notebook",
             name=notebook_name,
             definition=definition,
+            lro=True,
         )

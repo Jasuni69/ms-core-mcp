@@ -26,11 +26,13 @@ async def list_reports(workspace: Optional[str] = None, ctx: Context = None) -> 
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
 
-        reports = await client.list_reports(
-            workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"]
-        )
+        workspace_ref = workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"]
+        reports = await client.list_reports(workspace_ref)
 
-        markdown = f"# Reports in workspace '{workspace}'\n\n"
+        if not reports:
+            return f"No reports found in workspace '{workspace_ref}'."
+
+        markdown = f"# Reports in workspace '{workspace_ref}'\n\n"
         markdown += "| ID | Name | Description |\n"
         markdown += "|-----|------|-------------|\n"
 

@@ -43,6 +43,7 @@ class WarehouseClient:
         name: str,
         workspace: str,
         description: Optional[str] = None,
+        folder_id: Optional[str] = None,
     ):
         """Create a new warehouse."""
         if not name:
@@ -54,4 +55,5 @@ class WarehouseClient:
             description=description,
             type="Warehouse",
             lro=True,
+            folder_id=folder_id,
         )

@@ -1,7 +1,7 @@
 from typing import Optional
 from helpers.utils.context import mcp, __ctx_cache
 from mcp.server.fastmcp import Context
-from helpers.clients import get_sql_endpoint
+from helpers.clients import get_sql_endpoint as _get_sql_endpoint_helper
 from helpers.utils.authentication import get_azure_credentials
 
 
@@ -44,7 +44,7 @@ async def get_sql_endpoint(
 
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
 
-        name, endpoint = await get_sql_endpoint(
+        name, endpoint = await _get_sql_endpoint_helper(
             workspace=workspace,
             lakehouse=lakehouse,
             warehouse=warehouse,  # Add warehouse to the call

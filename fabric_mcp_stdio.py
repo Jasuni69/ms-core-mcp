@@ -6,7 +6,7 @@ import logging
 
 
 logger = get_logger(__name__)
-logger.level = logging.INFO
+logger.level = logging.ERROR
 
 
 @mcp.tool()
@@ -22,5 +22,6 @@ async def clear_context() -> str:
 
 if __name__ == "__main__":
     # Initialize and run the server in STDIO mode
-    logger.info("Starting MCP server in STDIO mode...")
+    # Avoid stdout noise before the MCP handshake
+    logger.error("Starting MCP server in STDIO mode...")
     mcp.run(transport="stdio")

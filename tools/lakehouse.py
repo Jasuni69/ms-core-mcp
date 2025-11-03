@@ -75,6 +75,7 @@ async def create_lakehouse(
     name: str,
     workspace: Optional[str] = None,
     description: Optional[str] = None,
+    folder_id: Optional[str] = None,
     ctx: Context = None,
 ) -> str:
     """Create a new lakehouse in a Fabric workspace.
@@ -96,7 +97,7 @@ async def create_lakehouse(
             return "Workspace not set. Please set a workspace using the 'set_workspace' command."
 
         result = await lakehouse_client.create_lakehouse(
-            name=name, workspace=ws, description=description
+            name=name, workspace=ws, description=description, folder_id=folder_id
         )
 
         # Format the response to be more user-friendly

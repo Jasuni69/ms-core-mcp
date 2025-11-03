@@ -42,3 +42,42 @@ async def list_workspaces(ctx: Context) -> str:
 
     except Exception as e:
         return f"Error listing workspaces: {str(e)}"
+
+
+@mcp.tool()
+async def create_workspace(
+    display_name: str,
+    capacity_id: str | None = None,
+    description: str | None = None,
+    domain_id: str | None = None,
+    ctx: Context = None,
+) -> str:
+    """Create a new Fabric workspace.
+
+    Args:
+        display_name: Workspace display name
+        capacity_id: Optional capacity ID
+        description: Optional description
+        domain_id: Optional domain identifier
+        ctx: Context object containing client information
+    Returns:
+        A string confirming creation or an error message.
+    """
+    try:
+        client = WorkspaceClient(
+            FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
+        )
+        resp = await client.create_workspace(
+            display_name=display_name,
+            capacity_id=capacity_id,
+            description=description,
+            domain_id=domain_id,
+        )
+
+        if isinstance(resp, dict):
+            ws_id = resp.get("id", "")
+            name = resp.get("displayName", display_name)
+            return f"Workspace '{name}' created successfully with ID: {ws_id}."
+        return str(resp)
+    except Exception as e:
+        return f"Error creating workspace: {str(e)}"

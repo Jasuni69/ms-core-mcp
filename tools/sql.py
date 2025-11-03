@@ -50,17 +50,23 @@ async def _resolve_sql_client(
         raise ValueError("Type must be 'lakehouse' or 'warehouse'.")
 
     credential = get_azure_credentials(ctx.client_id, __ctx_cache)
+
+    # Get the actual lakehouse/warehouse name from cache if not provided
+    resolved_lakehouse = lakehouse or __ctx_cache.get(f"{ctx.client_id}_lakehouse")
+    resolved_warehouse = warehouse or __ctx_cache.get(f"{ctx.client_id}_warehouse")
+
     name, endpoint = await get_sql_endpoint(
         workspace=ws,
-        lakehouse=lakehouse or __ctx_cache.get(f"{ctx.client_id}_lakehouse"),
-        warehouse=warehouse or __ctx_cache.get(f"{ctx.client_id}_warehouse"),
+        lakehouse=resolved_lakehouse,
+        warehouse=resolved_warehouse,
         type=resolved_type,
         credential=credential,
     )
 
     if not endpoint:
+        resource_name = resolved_lakehouse if resolved_type == "lakehouse" else resolved_warehouse
         raise ValueError(
-            f"Failed to resolve SQL endpoint for {resolved_type} '{lakehouse or warehouse}'."
+            f"Failed to resolve SQL endpoint for {resolved_type} '{resource_name}'."
         )
 
     sql_client = SQLClient(endpoint["server"], endpoint["database"], credential)

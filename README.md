@@ -4,6 +4,22 @@ A comprehensive Python-based MCP (Model Context Protocol) server for interacting
 
 **Use natural language to manage your Microsoft Fabric workspaces, lakehouses, warehouses, notebooks, and more!**
 
+## How to Run
+
+Run the primary entry-point script to start the MCP server locally:
+
+```bash
+python main.py
+```
+
+## How to Test
+
+Execute the project tests with `pytest` targeting the main test module:
+
+```bash
+pytest test_main.py
+```
+
 ## 🚀 Quick Start
 
 Want to ask Claude Desktop questions like:
@@ -31,6 +47,13 @@ Detailed instructions below ⬇️
 - ✅ Pipelines, dataflows, and refresh schedule automation
 - ✅ Power BI reporting and semantic model refresh workflows
 - ✅ Microsoft Graph messaging, directory, and drive insights
+
+### **Power BI Semantic Model Tools** 🆕
+- 🔍 **Model schema exploration** - Retrieve complete model structures with tables, columns, and relationships
+- 📊 **DAX measure management** - Create, update, delete, and list DAX measures programmatically
+- 🎯 **Measure discovery** - Search and retrieve specific measure definitions
+- ⚡ **Performance analysis** - Execute and analyze DAX queries with timing metrics
+- 🤖 **Agentic Power BI** - Enable Claude to interact with Power BI models end-to-end
 
 ### **Advanced PySpark Development**
 - 📓 **Intelligent notebook creation** with 6 specialized templates
@@ -1013,6 +1036,24 @@ This project is licensed under the MIT License. See the LICENSE file for details
 ## 🙏 Acknowledgments
 
 Inspired by: https://github.com/Augustab/microsoft_fabric_mcp/tree/main
+
+---
+
+## 📚 Documentation
+
+### Setup Guides
+- **[Claude Desktop Setup](docs/setup/CLAUDE_DESKTOP_SETUP.md)** - Configure Claude Desktop with this MCP server
+- **[Claude Code Setup](docs/setup/CLAUDE_CODE_VSCODE_SETUP.md)** - Use MCP tools in VS Code with Claude Code
+- **[Installation Checklist](docs/setup/INSTALLATION_CHECKLIST.md)** - Step-by-step installation guide
+
+### Feature Documentation
+- **[Semantic Model Tools](docs/SEMANTIC_MODEL_TOOLS.md)** 🆕 - Power BI semantic model schema exploration and DAX measure management
+- **[Quick Testing Guide](docs/testing/QUICK_TESTING_GUIDE.md)** - How to test MCP tools quickly
+
+### Development
+- **[Architecture Diagram](docs/ARCHITECTURE_DIAGRAM.md)** - System architecture overview
+- **[Bug Fixes](docs/bugfixes/)** - Bug fix summaries and test results
+- **[Debug Scripts](tests/debug_scripts/)** - Debug and testing scripts
 
 ---
 
