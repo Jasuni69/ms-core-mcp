@@ -1,45 +1,93 @@
-# Setting Up MCP Tools in Claude Code (VS Code)
+# Setting Up Microsoft Fabric MCP Tools in Claude Code (VS Code)
 
-This guide explains how to configure and use MCP (Model Context Protocol) servers with Claude Code inside Visual Studio Code.
+This guide explains how to configure and use the Microsoft Fabric MCP server with Claude Code inside Visual Studio Code.
 
 ## Overview
 
-Claude Code has its own MCP configuration system that is separate from VS Code's workspace settings. This means you need to configure MCP servers specifically for Claude Code, even if they're already configured in your VS Code workspace.
+Claude Code (the AI coding assistant in VS Code) has its own MCP configuration system that is separate from VS Code's workspace settings. This guide shows you how to set up the Fabric MCP tools so Claude Code can manage your Fabric workspaces, lakehouses, notebooks, and more through natural language.
 
-## Configuration Steps
+---
 
-### 1. Create `.mcp.json` in Your Project Root
+## Prerequisites
 
-Create a `.mcp.json` file in your project's root directory with the following structure:
+Before you begin, ensure you have:
 
+- ✅ **Python 3.12 or higher** installed
+- ✅ **Visual Studio Code** with Claude Code extension
+- ✅ **Azure CLI** installed and configured
+- ✅ **uv** package manager installed
+- ✅ Access to a **Microsoft Fabric workspace** (with Contributor or Admin role)
+
+---
+
+## Quick Setup
+
+### 1. Install Project Dependencies
+
+Open a terminal in the project root and run:
+
+```bash
+uv sync
+```
+
+This creates a virtual environment (`.venv`) and installs all required Python packages.
+
+### 2. Authenticate with Azure
+
+```bash
+az login
+```
+
+Verify authentication:
+```bash
+az account get-access-token --resource https://api.fabric.microsoft.com/
+```
+
+You should see an access token, which confirms you're authenticated.
+
+### 3. Create `.mcp.json` in Project Root
+
+Create a file named `.mcp.json` in your project's root directory:
+
+**Template:**
 ```json
 {
   "mcpServers": {
     "ms-fabric-core-tools-mcp": {
       "command": "uv",
       "args": ["run", "fabric_mcp_stdio.py"],
-      "cwd": "c:\\Users\\YourUsername\\Documents\\Projects\\ms-fabric-core-tools-mcp",
+      "cwd": "C:\\Users\\YourUsername\\Documents\\Projects\\ms-fabric-core-tools-mcp",
       "env": {}
     }
   }
 }
 ```
 
-**Key parameters:**
-- `command`: The executable to run (e.g., `uv`, `node`, `python`)
-- `args`: Command-line arguments to pass
-- `cwd`: Working directory for the MCP server (absolute path)
-- `env`: Environment variables (optional)
+**Important:** Replace `cwd` with the **absolute path** to this project on your machine.
 
-### 2. Enable MCP Servers in Claude Code Settings
+**Path Format Notes:**
+- **Windows**: Use double backslashes `\\` or forward slashes `/`
+  - ✅ `"C:\\Users\\Name\\Projects\\ms-fabric-core-tools-mcp"`
+  - ✅ `"C:/Users/Name/Projects/ms-fabric-core-tools-mcp"`
+  - ❌ `"C:\Users\Name..."` (single backslash won't work in JSON)
+- **macOS/Linux**: Use forward slashes
+  - ✅ `"/Users/name/projects/ms-fabric-core-tools-mcp"`
 
-Create or edit the Claude Code settings file at:
+**Why use `uv run`?**
+- `uv run` automatically activates the virtual environment and runs the script
+- No need to specify full path to Python executable
+- Works consistently across different operating systems
+
+### 4. Configure Claude Code Settings
+
+Create or edit the Claude Code settings file:
+
+**Location:**
 - **Windows**: `C:\Users\YourUsername\.claude\settings.json`
-- **macOS/Linux**: `~/.claude/settings.json`
+- **macOS**: `~/Library/Application Support/Claude/settings.json`
+- **Linux**: `~/.config/Claude/settings.json`
 
-Add one of the following configurations:
-
-#### Option 1: Enable All Project MCP Servers (Recommended)
+**Add this configuration:**
 
 ```json
 {
@@ -49,99 +97,142 @@ Add one of the following configurations:
 
 This automatically enables any MCP server found in `.mcp.json` files in your projects.
 
-#### Option 2: Enable Specific Servers Only
-
+**Alternative (more restrictive):**
 ```json
 {
   "enabledMcpjsonServers": ["ms-fabric-core-tools-mcp"]
 }
 ```
 
-This gives you more granular control over which servers are enabled.
+This only enables specific servers you list.
 
-### 3. Restart VS Code
+### 5. Add `.mcp.json` to `.gitignore`
 
-After creating the configuration files, you need to **reload the entire VS Code window**:
+**Important:** The `.mcp.json` file contains user-specific paths and should NOT be committed to git.
 
-1. Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
+The project's `.gitignore` already includes:
+```
+# Local MCP configuration (contains user-specific paths)
+.mcp.json
+```
+
+### 6. Restart VS Code
+
+After creating the configuration files, **reload the VS Code window**:
+
+1. Open Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
 2. Type "Reload Window" and select "Developer: Reload Window"
 
-Alternatively, close and reopen VS Code.
+Or simply close and reopen VS Code.
 
-### 4. Approve the MCP Server (if prompted)
+### 7. Approve the MCP Server
 
-When Claude Code detects a new MCP server, it may prompt you to approve it. This is a security feature to ensure you trust the code being executed.
+When Claude Code detects a new MCP server, it may prompt you to approve it. Click "Approve" to allow Claude Code to use the Fabric MCP tools.
+
+---
 
 ## Verifying the Setup
 
-Once configured, Claude Code can access MCP tools. The tools will be available with a prefix format:
+Once configured, test that Claude Code can access the MCP tools:
 
+1. Open a new Claude Code session in VS Code
+2. Ask: "List my Microsoft Fabric workspaces"
+3. You should see your workspaces listed
+
+The tools are available with this naming format:
 ```
-mcp__<server-name>__<tool-name>
+mcp__ms-fabric-core-tools-mcp__<tool-name>
 ```
 
-For example, with the `ms-fabric-core-tools-mcp` server:
-- `mcp__ms-fabric-core-tools-mcp__list_workspaces`
-- `mcp__ms-fabric-core-tools-mcp__create_lakehouse`
-- `mcp__ms-fabric-core-tools-mcp__sql_query`
+**Available Tools** (70+ tools total):
+- Workspace management: `list_workspaces`, `create_workspace`, `set_workspace`
+- Lakehouse operations: `list_lakehouses`, `create_lakehouse`, `list_tables`, `table_schema`
+- Notebook management: `create_notebook`, `list_notebooks`, `run_notebook_job`
+- SQL queries: `sql_query`, `sql_explain`, `sql_export`
+- OneLake files: `onelake_read`, `onelake_write`, `onelake_ls`
+- Semantic models: `list_semantic_models`, `create_measure`, `dax_query`
+- And many more!
 
-## Key Differences: VS Code vs Claude Code
+---
 
-| Aspect | VS Code Workspace | Claude Code |
-|--------|------------------|-------------|
-| Config Location | `.vscode/settings.json` or `workspace.json` | `.mcp.json` in project root |
-| Global Settings | VS Code settings | `~/.claude/settings.json` |
-| MCP Integration | VS Code's MCP client | Claude Code's MCP client |
-| Configuration Sharing | ❌ These are separate systems | ❌ These are separate systems |
+## Example Usage
 
-**Important**: Even if you have MCP servers configured in VS Code workspace settings, Claude Code will not detect them. You must create a separate `.mcp.json` file.
+Once configured, you can ask Claude Code:
+
+**Workspace Management:**
+```
+"List all my Fabric workspaces"
+"Create a new workspace called 'Analytics_Workspace' with trial capacity"
+"Set my workspace to 'Analytics_Workspace'"
+```
+
+**Lakehouse Operations:**
+```
+"Create a lakehouse called 'bronze_customer_data'"
+"Show me all tables in the bronze_customer_data lakehouse"
+"Get the schema for the customers_raw table"
+```
+
+**SQL Queries:**
+```
+"Run a SQL query: SELECT * FROM dbo.customers WHERE country = 'USA'"
+"Show me the top 10 customers by revenue"
+```
+
+**Notebook Management:**
+```
+"Create a PySpark notebook for ETL processing"
+"List all notebooks in my workspace"
+```
+
+---
 
 ## Troubleshooting
 
 ### MCP Tools Not Appearing
 
-1. **Check the `.mcp.json` file exists** in your project root
-2. **Verify the `cwd` path** is correct and uses the proper path format for your OS
-3. **Ensure Claude Code settings** are properly configured in `~/.claude/settings.json`
-4. **Reload the VS Code window** completely
-5. **Check for approval prompts** in the Claude Code interface
+1. **Check `.mcp.json` exists** in project root
+2. **Verify the `cwd` path** is correct and absolute
+3. **Check Claude Code settings** in `~/.claude/settings.json`
+4. **Reload VS Code window** completely
+5. **Look for approval prompts** in Claude Code interface
 
-### Server Connection Issues
+### "Command not found: uv"
 
-1. **Verify the command exists**: Make sure `uv`, `node`, `python`, or whatever command you're using is in your PATH
-2. **Test the server manually**: Try running the command directly from your terminal
-3. **Check environment variables**: Ensure any required env vars are set in the `env` object
+Install uv:
+```bash
+# Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
 
-### Path Format Issues
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-- **Windows**: Use double backslashes `\\` or forward slashes `/`
-  - ✅ `"c:\\Users\\Name\\Project"`
-  - ✅ `"c:/Users/Name/Project"`
-  - ❌ `"c:\Users\Name\Project"` (single backslash won't work in JSON)
+Then restart your terminal and VS Code.
 
-## Example: This Project (ms-fabric-core-tools-mcp)
+### Azure Authentication Errors
 
-This project provides MCP tools for Microsoft Fabric. After setup, Claude Code can:
+1. Run `az login` again
+2. Verify workspace access in Fabric portal
+3. Test token: `az account get-access-token --resource https://api.fabric.microsoft.com/`
 
-- List and create workspaces, lakehouses, and warehouses
-- Run SQL queries against Fabric data sources
-- Manage notebooks and run notebook jobs
-- Interact with semantic models and reports
-- Perform OneLake file operations
-- Query via Microsoft Graph API
-- And much more (70+ tools available)
+---
 
-## Additional Resources
+## ODBC Driver (Optional)
 
-- [Claude Code Documentation](https://docs.claude.com/claude-code)
-- [MCP Protocol Specification](https://modelcontextprotocol.io/)
-- [Microsoft Fabric MCP Server Repository](https://github.com/your-repo-here)
+Some SQL tools require Microsoft ODBC Driver for SQL Server.
+
+**Install:** [Download ODBC Driver 18](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server)
+
+---
 
 ## Summary
 
-To use MCP servers with Claude Code in VS Code:
+1. ✅ Run `uv sync` to install dependencies
+2. ✅ Run `az login` to authenticate
+3. ✅ Create `.mcp.json` in project root
+4. ✅ Configure `~/.claude/settings.json`
+5. ✅ Reload VS Code
+6. ✅ Start using: "List my Fabric workspaces"!
 
-1. ✅ Create `.mcp.json` in your project root with server configuration
-2. ✅ Create/edit `~/.claude/settings.json` to enable MCP servers
-3. ✅ Reload VS Code window
-4. ✅ Start using MCP tools in Claude Code!
+🎉 You're ready to manage Microsoft Fabric through Claude Code!
