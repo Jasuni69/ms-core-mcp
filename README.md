@@ -40,34 +40,35 @@ Detailed instructions below ⬇️
 
 ## 🌟 Features
 
+**77 MCP Tools Available** - Complete natural language control over Microsoft Fabric
+
 ### **Core Fabric Operations**
-- ✅ Workspace, lakehouse, warehouse, and table management
-- ✅ Delta table preview, history, schema, and maintenance (OPTIMIZE/VACUUM)
-- ✅ SQL endpoint orchestration for query, export, and notebook jobs
-- ✅ Pipelines, dataflows, and refresh schedule automation
-- ✅ Power BI reporting and semantic model refresh workflows
-- ✅ Microsoft Graph messaging, directory, and drive insights
+- ✅ **Workspace, lakehouse, warehouse management** (9 tools) - Create, list, configure resources
+- ✅ **Delta table operations** (10 tools) - Preview, schema, history, OPTIMIZE/VACUUM
+- ✅ **SQL endpoint operations** (4 tools) - Query, explain, export results
+- ✅ **Pipeline & dataflow automation** (6 tools) - Run, monitor, schedule refreshes
+- ✅ **OneLake file operations** (4 tools) - Read, write, list, delete files
 
-### **Power BI Semantic Model Tools** 🆕
-- 🔍 **Model schema exploration** - Retrieve complete model structures with tables, columns, and relationships
-- 📊 **DAX measure management** - Create, update, delete, and list DAX measures programmatically
-- 🎯 **Measure discovery** - Search and retrieve specific measure definitions
+### **Power BI & Semantic Models**
+- 🔍 **Semantic model tools** (9 tools) - Schema exploration, measure management, DAX queries
+- 📊 **Report operations** (6 tools) - List, export, parameters, refresh workflows
 - ⚡ **Performance analysis** - Execute and analyze DAX queries with timing metrics
-- 🤖 **Agentic Power BI** - Enable Claude to interact with Power BI models end-to-end
 
-### **Advanced PySpark Development**
-- 📓 **Intelligent notebook creation** with 6 specialized templates
-- 🔧 **Smart code generation** for common PySpark operations
-- ✅ **Comprehensive validation** with syntax and best practices checking
-- 🎯 **Fabric-specific optimizations** and compatibility checks
-- 📊 **Performance analysis** with scoring and optimization recommendations
-- 🚀 **Real-time monitoring** and execution insights
+### **Notebook & Code Development**
+- 📓 **Notebook management** (19 tools) - Create, execute, monitor, analyze
+- 🔧 **Code generation** - PySpark templates for ETL, analytics, ML, streaming
+- ✅ **Validation & analysis** - Syntax checking, best practices, performance scoring
+- 🎯 **Fabric-specific optimizations** - Lakehouse integration, Delta Lake operations
 
-### **Natural Language Interface via Claude Desktop**
-- 🤖 **Ask questions in plain English** about your Fabric resources
-- 🧠 **Context-aware assistance** with conversation memory
-- 🎨 **Intelligent code formatting** and explanations
-- 📈 **Smart optimization suggestions** based on project patterns
+### **Microsoft Graph Integration**
+- 👥 **Azure AD operations** (8 tools) - User lookups, email, Teams messages
+- 📁 **OneDrive/SharePoint** - File operations via Microsoft Graph
+- 💬 **Teams integration** - Post messages, manage channel aliases
+
+### **Administration & Governance**
+- 🔐 **Permission management** (4 tools) - View and set item permissions
+- 📋 **Item operations** - Resolve, list, filter workspace items
+- 📊 **Data loading** - Import data from URLs into lakehouses/warehouses
 
 ## 🏗️ Architecture
 
@@ -317,7 +318,11 @@ That's it! You can now use natural language to interact with Microsoft Fabric!
 - "Analyze the performance of my notebook"
 - "Validate this PySpark code for best practices"
 
-## 🛠️ Complete Tool Reference
+## 🛠️ Tool Reference
+
+**📖 For complete documentation of all 77 tools, see [Complete Tool Reference](docs/COMPLETE_TOOL_REFERENCE.md)**
+
+This section provides quick examples for commonly used tools. For exhaustive documentation with all parameters and options, refer to the complete reference guide.
 
 ### **1. Workspace Management**
 
@@ -325,6 +330,17 @@ That's it! You can now use natural language to interact with Microsoft Fabric!
 List all available Fabric workspaces.
 ```python
 # Usage in LLM: "List all my Fabric workspaces"
+```
+
+#### `create_workspace`
+Create a new Fabric workspace.
+```python
+create_workspace(
+    display_name="Analytics-Workspace",
+    capacity_id="00000000-0000-0000-0000-000000000000",  # Optional: trial capacity ID
+    description="Analytics workspace for BI",  # Optional
+    domain_id="domain-id"  # Optional
+)
 ```
 
 #### `set_workspace`
