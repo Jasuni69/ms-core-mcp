@@ -257,3 +257,146 @@ async def schedule_set(
         return {"error": str(exc)}
 
 
+@mcp.tool()
+async def create_data_pipeline(
+    pipeline_name: str,
+    pipeline_definition: Dict[str, Any],
+    workspace: Optional[str] = None,
+    description: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """
+    Create a Data Pipeline in a Fabric workspace with custom activities and dependencies.
+
+    Perfect for orchestrating medallion architecture workflows (Bronze → Silver → Gold).
+
+    Args:
+        pipeline_name: Name for the pipeline
+        pipeline_definition: Pipeline JSON definition with activities and dependencies
+        workspace: Workspace name or ID (optional, uses context if not provided)
+        description: Optional description for the pipeline
+        ctx: Context object
+
+    Returns:
+        Dictionary with pipeline details including ID and status
+
+    Example - Bronze to Silver to Gold cascade:
+        pipeline_definition = {
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Bronze_Ingestion",
+                        "type": "Notebook",
+                        "typeProperties": {
+                            "notebook": {"name": "bronze_ingest_notebook"}
+                        },
+                        "dependsOn": []
+                    },
+                    {
+                        "name": "Silver_Transform",
+                        "type": "Notebook",
+                        "typeProperties": {
+                            "notebook": {"name": "silver_transform_notebook"}
+                        },
+                        "dependsOn": [
+                            {
+                                "activity": "Bronze_Ingestion",
+                                "dependencyConditions": ["Succeeded"]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Gold_Transform",
+                        "type": "Notebook",
+                        "typeProperties": {
+                            "notebook": {"name": "gold_transform_notebook"}
+                        },
+                        "dependsOn": [
+                            {
+                                "activity": "Silver_Transform",
+                                "dependencyConditions": ["Succeeded"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+        create_data_pipeline(
+            pipeline_name="Medallion_ETL_Pipeline",
+            pipeline_definition=pipeline_definition,
+            workspace="PROD-Analytics",
+            description="Orchestrates Bronze → Silver → Gold transformations"
+        )
+    """
+    try:
+        context = await _resolve_workspace(ctx, workspace)
+        fabric_client = context["fabric_client"]
+
+        logger.info(f"Creating pipeline '{pipeline_name}' in workspace '{context['workspace_name']}'")
+
+        response = await fabric_client.create_pipeline(
+            workspace_id=context["workspace_id"],
+            pipeline_name=pipeline_name,
+            pipeline_definition=pipeline_definition,
+            description=description,
+        )
+
+        return {
+            "success": True,
+            "pipeline": response,
+            "workspace": context["workspace_name"],
+            "pipeline_name": pipeline_name,
+        }
+
+    except Exception as exc:
+        logger.error("Failed to create data pipeline: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def get_pipeline_definition(
+    pipeline: str,
+    workspace: Optional[str] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """
+    Get the definition of an existing Data Pipeline including activities and dependencies.
+
+    Args:
+        pipeline: Pipeline name or ID
+        workspace: Workspace name or ID (optional, uses context if not provided)
+        ctx: Context object
+
+    Returns:
+        Dictionary with pipeline definition including decoded activities
+
+    Example:
+        get_pipeline_definition(
+            pipeline="Medallion_ETL_Pipeline",
+            workspace="PROD-Analytics"
+        )
+    """
+    try:
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
+        fabric_client = context["fabric_client"]
+
+        logger.info(f"Retrieving pipeline definition for '{context['item_name']}'")
+
+        response = await fabric_client.get_pipeline_definition(
+            workspace_id=context["workspace_id"],
+            pipeline_id=context["item_id"],
+        )
+
+        return {
+            "success": True,
+            "workspace": context["workspace_name"],
+            "pipeline_name": context["item_name"],
+            "definition": response,
+        }
+
+    except Exception as exc:
+        logger.error("Failed to get pipeline definition: %s", exc)
+        return {"error": str(exc)}
+
+

@@ -778,3 +778,279 @@ class FabricApiClient:
             definition=definition,
             lro=True,
         )
+
+    async def create_shortcut(
+        self,
+        workspace_id: str,
+        item_id: str,
+        shortcut_name: str,
+        shortcut_path: str,
+        target_workspace_id: str,
+        target_item_id: str,
+        target_path: str,
+        conflict_policy: str = "CreateOrOverwrite",
+    ) -> Dict[str, Any]:
+        """
+        Create a OneLake shortcut from one lakehouse/warehouse to another.
+
+        Args:
+            workspace_id: Source workspace ID
+            item_id: Source lakehouse/warehouse ID
+            shortcut_name: Name for the shortcut
+            shortcut_path: Path in source where shortcut appears (e.g., "Tables", "Files/subfolder")
+            target_workspace_id: Target workspace ID containing the data
+            target_item_id: Target lakehouse/warehouse ID with the data
+            target_path: Path in target to link to (e.g., "Tables/customers_raw")
+            conflict_policy: Action when shortcut exists (Abort, GenerateUniqueName, CreateOrOverwrite, OverwriteOnly)
+
+        Returns:
+            Dictionary with shortcut details
+        """
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(item_id):
+            raise ValueError("Invalid item ID.")
+        if not _is_valid_uuid(target_workspace_id):
+            raise ValueError("Invalid target workspace ID.")
+        if not _is_valid_uuid(target_item_id):
+            raise ValueError("Invalid target item ID.")
+
+        payload = {
+            "name": shortcut_name,
+            "path": shortcut_path,
+            "target": {
+                "oneLake": {
+                    "workspaceId": target_workspace_id,
+                    "itemId": target_item_id,
+                    "path": target_path,
+                }
+            },
+        }
+
+        endpoint = f"workspaces/{workspace_id}/items/{item_id}/shortcuts?shortcutConflictPolicy={conflict_policy}"
+
+        try:
+            response = await self._make_request(
+                endpoint=endpoint,
+                method="POST",
+                params=payload,
+            )
+            logger.info(f"Created shortcut '{shortcut_name}' in {shortcut_path}")
+            return response
+        except requests.RequestException as e:
+            logger.error(f"Failed to create shortcut: {str(e)}")
+            if e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            raise ValueError(f"Failed to create shortcut '{shortcut_name}': {str(e)}")
+
+    async def list_shortcuts(
+        self,
+        workspace_id: str,
+        item_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        List all shortcuts in a lakehouse/warehouse.
+
+        Args:
+            workspace_id: Workspace ID
+            item_id: Lakehouse/warehouse ID
+
+        Returns:
+            List of shortcuts
+        """
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(item_id):
+            raise ValueError("Invalid item ID.")
+
+        endpoint = f"workspaces/{workspace_id}/items/{item_id}/shortcuts"
+
+        try:
+            response = await self._make_request(
+                endpoint=endpoint,
+                method="GET",
+                use_pagination=True,
+            )
+            return response if response else []
+        except requests.RequestException as e:
+            logger.error(f"Failed to list shortcuts: {str(e)}")
+            return []
+
+    async def delete_shortcut(
+        self,
+        workspace_id: str,
+        item_id: str,
+        shortcut_path: str,
+        shortcut_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Delete a OneLake shortcut.
+
+        Args:
+            workspace_id: Workspace ID
+            item_id: Lakehouse/warehouse ID
+            shortcut_path: Path where shortcut exists
+            shortcut_name: Name of the shortcut
+
+        Returns:
+            Success status
+        """
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(item_id):
+            raise ValueError("Invalid item ID.")
+
+        # URL encode the path and name
+        from urllib.parse import quote
+        encoded_path = quote(shortcut_path, safe='')
+        encoded_name = quote(shortcut_name, safe='')
+
+        endpoint = f"workspaces/{workspace_id}/items/{item_id}/shortcuts/{encoded_path}/{encoded_name}"
+
+        try:
+            response = await self._make_request(
+                endpoint=endpoint,
+                method="DELETE",
+            )
+            logger.info(f"Deleted shortcut '{shortcut_name}' from {shortcut_path}")
+            return {"success": True, "message": f"Shortcut '{shortcut_name}' deleted successfully"}
+        except requests.RequestException as e:
+            logger.error(f"Failed to delete shortcut: {str(e)}")
+            if e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            raise ValueError(f"Failed to delete shortcut '{shortcut_name}': {str(e)}")
+
+    async def create_pipeline(
+        self,
+        workspace_id: str,
+        pipeline_name: str,
+        pipeline_definition: Dict[str, Any],
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a Data Pipeline in a Fabric workspace.
+
+        Args:
+            workspace_id: Workspace ID
+            pipeline_name: Name for the pipeline
+            pipeline_definition: Pipeline JSON definition with activities and dependencies
+            description: Optional description for the pipeline
+
+        Returns:
+            Dictionary with pipeline details including ID and status
+
+        Example pipeline_definition:
+        {
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Bronze_Ingestion",
+                        "type": "Notebook",
+                        "typeProperties": {
+                            "notebook": {"name": "bronze_ingest_notebook"}
+                        },
+                        "dependsOn": []
+                    },
+                    {
+                        "name": "Silver_Transform",
+                        "type": "Notebook",
+                        "typeProperties": {
+                            "notebook": {"name": "silver_transform_notebook"}
+                        },
+                        "dependsOn": [
+                            {
+                                "activity": "Bronze_Ingestion",
+                                "dependencyConditions": ["Succeeded"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+
+        # Encode pipeline definition to base64
+        definition_json = json.dumps(pipeline_definition)
+        definition_base64 = base64.b64encode(definition_json.encode("utf-8")).decode("utf-8")
+
+        payload = {
+            "displayName": pipeline_name,
+            "definition": {
+                "parts": [
+                    {
+                        "path": "pipeline-content.json",
+                        "payload": definition_base64,
+                        "payloadType": "InlineBase64"
+                    }
+                ]
+            }
+        }
+
+        if description:
+            payload["description"] = description
+
+        endpoint = f"workspaces/{workspace_id}/dataPipelines"
+
+        try:
+            response = await self._make_request(
+                endpoint=endpoint,
+                method="POST",
+                params=payload,
+                lro=True,
+                lro_poll_interval=2,
+            )
+            logger.info(f"Created pipeline '{pipeline_name}' in workspace '{workspace_id}'")
+            return response
+        except requests.RequestException as e:
+            logger.error(f"Failed to create pipeline: {str(e)}")
+            if e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            raise ValueError(f"Failed to create pipeline '{pipeline_name}': {str(e)}")
+
+    async def get_pipeline_definition(
+        self,
+        workspace_id: str,
+        pipeline_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Get the definition of an existing Data Pipeline.
+
+        Args:
+            workspace_id: Workspace ID
+            pipeline_id: Pipeline ID
+
+        Returns:
+            Dictionary with pipeline definition including activities and dependencies
+        """
+        if not _is_valid_uuid(workspace_id):
+            raise ValueError("Invalid workspace ID.")
+        if not _is_valid_uuid(pipeline_id):
+            raise ValueError("Invalid pipeline ID.")
+
+        endpoint = f"workspaces/{workspace_id}/dataPipelines/{pipeline_id}/definition"
+
+        try:
+            response = await self._make_request(
+                endpoint=endpoint,
+                method="GET",
+            )
+
+            # The definition might be base64 encoded in parts
+            if response and "definition" in response:
+                definition = response["definition"]
+                if "parts" in definition:
+                    for part in definition["parts"]:
+                        if part.get("payloadType") == "InlineBase64":
+                            # Decode the base64 payload
+                            decoded = base64.b64decode(part["payload"]).decode("utf-8")
+                            part["payloadDecoded"] = json.loads(decoded)
+
+            logger.info(f"Retrieved pipeline definition for '{pipeline_id}'")
+            return response
+        except requests.RequestException as e:
+            logger.error(f"Failed to get pipeline definition: {str(e)}")
+            if e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            raise ValueError(f"Failed to get pipeline definition for '{pipeline_id}': {str(e)}")

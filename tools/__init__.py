@@ -58,6 +58,9 @@ from tools.onelake import (
     onelake_read,
     onelake_write,
     onelake_rm,
+    onelake_create_shortcut,
+    onelake_list_shortcuts,
+    onelake_delete_shortcut,
 )
 from tools.sql import (
     sql_query,
@@ -71,6 +74,8 @@ from tools.pipeline import (
     dataflow_refresh,
     schedule_list,
     schedule_set,
+    create_data_pipeline,
+    get_pipeline_definition,
 )
 from tools.powerbi import (
     semantic_model_refresh,
@@ -131,6 +136,8 @@ __all__ = [
     "dataflow_refresh",
     "schedule_list",
     "schedule_set",
+    "create_data_pipeline",
+    "get_pipeline_definition",
     "semantic_model_refresh",
     "dax_query",
     "report_export",
@@ -168,6 +175,9 @@ __all__ = [
     "onelake_read",
     "onelake_write",
     "onelake_rm",
+    "onelake_create_shortcut",
+    "onelake_list_shortcuts",
+    "onelake_delete_shortcut",
 ]
 
 get_sql_endpoint = get_sql_endpoint_tool
