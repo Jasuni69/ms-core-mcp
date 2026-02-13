@@ -24,10 +24,15 @@ IMPORTANT: setup.py safely merges into existing config files - it will NOT delet
 - Fabric SQL endpoints are read-only - no INSERT/UPDATE/DELETE/DDL
 - New delta tables take 5-10 min to appear in SQL endpoint
 - Use T-SQL dialect with FORMAT() for readable numbers
-- Column names vary per dataset - always check schema first
+- NEVER guess table names, schemas, or column names. When querying a lakehouse for the first time:
+  1. Run `SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES` to discover what exists
+  2. Run `SELECT TOP 1 * FROM <schema>.<table>` on relevant tables to get actual column names
+  3. Then write the real query using the discovered names
+  Column conventions vary wildly (PascalCase, snake_case, etc). Always discover, never assume.
 
 ## Data Questions
 - Translate natural language to SQL automatically - don't ask, just query
+- When querying unfamiliar data, silently discover tables and columns first, then write the query. Don't show the discovery steps to the user unless they ask.
 - Format results as markdown tables
 - Default to TOP 20 for ranked queries
 - Suggest follow-up analyses when relevant
