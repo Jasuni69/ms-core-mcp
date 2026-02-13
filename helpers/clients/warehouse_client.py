@@ -1,5 +1,6 @@
 from helpers.logging_config import get_logger
 from helpers.clients.fabric_client import FabricApiClient
+from helpers.utils import _is_valid_uuid
 from typing import Optional, Dict, Any
 
 logger = get_logger(__name__)
@@ -10,7 +11,9 @@ class WarehouseClient:
         self.client = client
 
     async def list_warehouses(self, workspace: str):
-        """List all warehouses in a lakehouse."""
+        """List all warehouses in a workspace."""
+        if not _is_valid_uuid(workspace):
+            (_, workspace) = await self.client.resolve_workspace_name_and_id(workspace)
         warehouses = await self.client.get_warehouses(workspace)
 
         if not warehouses:

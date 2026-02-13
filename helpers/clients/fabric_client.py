@@ -489,20 +489,27 @@ class FabricApiClient:
             Defaults to None which resolves to the workspace of the attached lakehouse
             or if no lakehouse attached, resolves to the workspace of the notebook.
         """
-        from sempy_labs._utils import item_types
-
         if _is_valid_uuid(workspace):
             workspace_id = workspace
         else:
             (workspace_name, workspace_id) = await self.resolve_workspace_name_and_id(
                 workspace
             )
-        
-        # Get item type from sempy_labs mapping
-        item_type_mapping = item_types.get(type)
-        if not item_type_mapping:
-            raise ValueError(f"Unknown item type '{type}'. Available types: {list(item_types.keys())}")
-        item_type = item_type_mapping[0].lower()
+
+        # Map item type to API path name
+        # Try sempy_labs mapping first, fall back to simple pluralization
+        item_type = None
+        try:
+            from sempy_labs._utils import item_types
+            item_type_mapping = item_types.get(type)
+            if item_type_mapping:
+                item_type = item_type_mapping[0].lower()
+        except (ImportError, AttributeError):
+            logger.warning("sempy_labs._utils.item_types not available, using fallback")
+
+        if not item_type:
+            # Fallback: lowercase the type name
+            item_type = type.lower()
 
         payload = {
             "displayName": name,

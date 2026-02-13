@@ -52,23 +52,59 @@ async def load_data_from_url(
             tmp_path = tmp_file.name
         # Choose destination: lakehouse or warehouse
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
-        resource_id = None
+        fabric_client = FabricApiClient(credential)
+
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            os.remove(tmp_path)
+            return "Workspace not set. Please set a workspace using set_workspace."
+
         resource_type = None
+        resource_ref = None
         if lakehouse:
-            client = LakehouseClient(FabricApiClient(credential))
-            resource_id = lakehouse
             resource_type = "lakehouse"
+            resource_ref = lakehouse
         elif warehouse:
-            client = WarehouseClient(FabricApiClient(credential))
-            resource_id = warehouse
             resource_type = "warehouse"
+            resource_ref = warehouse
         else:
+            os.remove(tmp_path)
             return "Either lakehouse or warehouse must be specified."
-        # Here you would call the appropriate method to upload/ingest the file into the table.
-        # This is a placeholder for the actual implementation, which depends on the client API.
-        # For now, just return a success message with file info.
-        os.remove(tmp_path)
-        return f"Data from {url} loaded into table '{destination_table}' in {resource_type} '{resource_id}'. (File type: {file_ext})"
+
+        try:
+            # Read data with polars
+            import polars as pl
+
+            if file_ext == "csv":
+                df = pl.read_csv(tmp_path)
+            else:
+                df = pl.read_parquet(tmp_path)
+
+            row_count = len(df)
+
+            # Get SQL endpoint for loading
+            _, endpoint = await get_sql_endpoint(
+                workspace=workspace_ref,
+                **{resource_type: resource_ref},
+                type=resource_type,
+                credential=credential,
+            )
+            if not endpoint:
+                os.remove(tmp_path)
+                return f"Unable to resolve SQL endpoint for {resource_type} '{resource_ref}'."
+
+            from helpers.clients.sql_client import SQLClient
+            sql_client = SQLClient(endpoint["server"], endpoint["database"], credential)
+
+            import asyncio
+            await asyncio.to_thread(
+                sql_client.load_data, df, destination_table, "replace"
+            )
+
+            return f"Loaded {row_count} rows from {url} into table '{destination_table}' in {resource_type} '{resource_ref}'."
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
     except Exception as e:
         return f"Error loading data: {str(e)}"
 

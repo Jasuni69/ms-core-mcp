@@ -36,7 +36,7 @@ class TableClient:
         tables = await self.list_tables(workspace, rsc_id, rsc_type)
 
         # Find the specific table
-        matching_tables = [t for t in tables if t["name"].lower() == table_name.lower()]
+        matching_tables = [t for t in tables if t.get("name", "").lower() == table_name.lower()]
 
         if not matching_tables:
             return f"No table found with name '{table_name}' in {rsc_type} '{rsc_id}'."
@@ -44,14 +44,15 @@ class TableClient:
         table = matching_tables[0]
 
         # Check that it is a Delta table
-        if table["format"].lower() != "delta":
-            return f"The table '{table_name}' is not a Delta table (format: {table['format']})."
+        table_format = table.get("format", "unknown")
+        if table_format.lower() != "delta":
+            return f"The table '{table_name}' is not a Delta table (format: {table_format})."
 
         # Get schema
         delta_tables = await get_delta_schemas([table], credential)
 
         if not delta_tables:
-            return f"Could not retrieve schema for table '{table['name']}'."
+            return f"Could not retrieve schema for table '{table.get('name', table_name)}'."
 
         # Format result as markdown
         table_info, schema, metadata = delta_tables[0]

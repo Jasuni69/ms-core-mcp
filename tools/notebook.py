@@ -69,57 +69,62 @@ async def run_notebook_job(
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Submit a notebook job run with optional parameters and configuration."""
+    import requests as http_requests
 
     try:
         context = await _resolve_notebook_context(ctx, workspace, notebook)
 
-        # Preferred endpoint per official docs: items job instances
-        payload_items = {
-            "parameters": parameters or {},
-        }
+        payload = {"parameters": parameters or []}
         if configuration:
-            payload_items["configuration"] = configuration
+            payload["configuration"] = configuration
 
-        preferred_endpoint = (
-            f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances"
+        # Make direct HTTP call to capture job ID from 202 response headers
+        url = (
+            f"https://api.fabric.microsoft.com/v1"
+            f"/workspaces/{context['workspace_id']}"
+            f"/items/{context['notebook_id']}"
+            f"/jobs/instances?jobType=RunNotebook"
         )
+        token = context["credential"].get_token(
+            "https://api.fabric.microsoft.com/.default"
+        ).token
+        headers = {"Authorization": f"Bearer {token}"}
 
-        last_error: Exception | None = None
-        response = None
-        for endpoint, method, payload in [
-            (preferred_endpoint, "post", payload_items),
-            # Fallback older or alternate endpoints
-            (
-                f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs",
-                "post",
-                {"jobParameters": parameters or {}},
-            ),
-        ]:
+        resp = http_requests.post(url, headers=headers, json=payload, timeout=60)
+
+        if resp.status_code not in (200, 201, 202):
+            raise ValueError(
+                f"Notebook job submission failed: {resp.status_code} - {resp.text}"
+            )
+
+        # Extract job ID from headers (202 response has empty body)
+        job_id = (
+            resp.headers.get("x-ms-job-id")
+            or resp.headers.get("X-Ms-Job-Id")
+        )
+        if not job_id:
+            # Try parsing from Location header
+            location = resp.headers.get("Location") or resp.headers.get("location")
+            if location:
+                # Location format: .../jobs/instances/{job_id}
+                job_id = location.rstrip("/").split("/")[-1]
+
+        # Also try response body if present
+        if not job_id and resp.text:
             try:
-                response = await context["fabric_client"]._make_request(
-                    endpoint=endpoint,
-                    params=payload,
-                    method=method,
-                )
-                break
-            except Exception as inner_exc:
-                last_error = inner_exc
-                continue
+                body = resp.json()
+                job_id = body.get("id") or body.get("jobInstanceId") or body.get("jobId")
+            except Exception:
+                pass
 
-        if response is None:
-            raise last_error or ValueError("Failed to submit notebook job")
-
-        # Prefer job instance id
-        job_id = None
-        if isinstance(response, dict):
-            job_id = response.get("id") or response.get("jobInstanceId") or response.get("jobId")
         if job_id:
             __ctx_cache[f"{ctx.client_id}_notebook_job"] = job_id
 
         return {
             "workspace": context["workspace_name"],
             "notebook": context["notebook_name"],
-            "job": response,
+            "job_id": job_id,
+            "status": "Submitted",
         }
     except Exception as exc:
         logger.error("Error submitting notebook job: %s", exc)
@@ -141,25 +146,11 @@ async def get_run_status(
         if not target_job:
             raise ValueError("Job ID must be provided or stored in context.")
 
-        paths = [
-            # Preferred items job instances endpoint
-            f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}",
-            # Fallbacks
-            f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs/{target_job}",
-            f"workspaces/{context['workspace_id']}/notebookJobs/{target_job}",
-            f"workspaces/{context['workspace_id']}/notebookJobRuns/{target_job}",
-        ]
+        # Preferred endpoint per Fabric API docs
+        path = f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}"
 
-        last_error = None
-        for path in paths:
-            try:
-                status = await context["fabric_client"]._make_request(endpoint=path)
-                return status
-            except Exception as inner_exc:
-                last_error = inner_exc
-                continue
-
-        raise last_error or ValueError("Unable to retrieve notebook job status.")
+        status = await context["fabric_client"]._make_request(endpoint=path)
+        return status
     except Exception as exc:
         logger.error("Error retrieving notebook job status: %s", exc)
         return {"error": str(exc)}
@@ -180,38 +171,15 @@ async def cancel_notebook_job(
         if not target_job:
             raise ValueError("Job ID must be provided or stored in context.")
 
-        candidate_requests = [
-            (
-                f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}/cancel",
-                "post",
-                {},
-            ),
-            (
-                f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}:cancel",
-                "post",
-                {},
-            ),
-            (
-                f"workspaces/{context['workspace_id']}/notebooks/{context['notebook_id']}/jobs/{target_job}/cancel",
-                "post",
-                {},
-            ),
-        ]
+        # Preferred endpoint per Fabric API docs
+        endpoint = f"workspaces/{context['workspace_id']}/items/{context['notebook_id']}/jobs/instances/{target_job}/cancel"
 
-        last_error = None
-        for endpoint, method, payload in candidate_requests:
-            try:
-                resp = await context["fabric_client"]._make_request(
-                    endpoint=endpoint,
-                    params=payload,
-                    method=method,
-                )
-                return {"canceled": True, "response": resp}
-            except Exception as inner_exc:
-                last_error = inner_exc
-                continue
-
-        raise last_error or ValueError("Unable to cancel notebook job.")
+        resp = await context["fabric_client"]._make_request(
+            endpoint=endpoint,
+            params={},
+            method="post",
+        )
+        return {"canceled": True, "response": resp}
     except Exception as exc:
         logger.error("Error canceling notebook job: %s", exc)
         return {"error": str(exc)}
@@ -320,8 +288,8 @@ async def list_notebooks(workspace: Optional[str] = None, ctx: Context = None) -
 @mcp.tool()
 async def create_notebook(
     workspace: str,
-    # notebook_name: str,
-    # content: str,
+    notebook_name: str = "new_notebook",
+    content: Optional[str] = None,
     ctx: Context = None,
 ) -> str:
     """Create a new notebook in a Fabric workspace.
@@ -329,26 +297,27 @@ async def create_notebook(
     Args:
         workspace: Name or ID of the workspace
         notebook_name: Name of the new notebook
-        content: Content of the notebook (in JSON format)
+        content: Content of the notebook (in JSON format). If not provided, creates a basic Hello Fabric notebook.
         ctx: Context object containing client information
     Returns:
         A string containing the ID of the created notebook or an error message.
     """
-    notebook_json = {
-        "nbformat": 4,
-        "nbformat_minor": 5,
-        "cells": [
-            {
-                "cell_type": "code",
-                "source": ["print('Hello, Fabric!')\n"],
-                "execution_count": None,
-                "outputs": [],
-                "metadata": {},
-            }
-        ],
-        "metadata": {"language_info": {"name": "python"}},
-    }
-    notebook_content = json.dumps(notebook_json)
+    if not content:
+        notebook_json = {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": ["print('Hello, Fabric!')\n"],
+                    "execution_count": None,
+                    "outputs": [],
+                    "metadata": {},
+                }
+            ],
+            "metadata": {"language_info": {"name": "python"}},
+        }
+        content = json.dumps(notebook_json)
     try:
         if ctx is None:
             raise ValueError("Context (ctx) must be provided.")
@@ -357,13 +326,12 @@ async def create_notebook(
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
         response = await notebook_client.create_notebook(
-            workspace, "test_notebook_2", notebook_content
+            workspace, notebook_name, content
         )
 
         if isinstance(response, dict):
-            # Prefer ID when available; otherwise return message
             if response.get("id"):
-                return response.get("id")
+                return f"Created notebook '{notebook_name}' with ID: {response['id']}"
             if response.get("error"):
                 return response["error"]
             return json.dumps(response)

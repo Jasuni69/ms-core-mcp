@@ -73,10 +73,10 @@ async def pipeline_run(
     ctx: Context = None,
 ) -> Dict[str, Any]:
     try:
-        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
         payload = parameters or {}
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/run",
+            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/run",
             params=payload,
             method="post",
         )
@@ -94,12 +94,12 @@ async def pipeline_status(
     ctx: Context = None,
 ) -> Dict[str, Any]:
     try:
-        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
         if not run_id:
             raise ValueError("run_id must be provided.")
 
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/runs/{run_id}"
+            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/runs/{run_id}"
         )
         return response
     except Exception as exc:
@@ -115,12 +115,12 @@ async def pipeline_logs(
     ctx: Context = None,
 ) -> Dict[str, Any]:
     try:
-        context = await _resolve_workspace_item(ctx, workspace, pipeline, "Pipeline")
+        context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
         if not run_id:
             raise ValueError("run_id must be provided.")
 
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/pipelines/{context['item_id']}/runs/{run_id}/logs"
+            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/runs/{run_id}/logs"
         )
         return response
     except Exception as exc:

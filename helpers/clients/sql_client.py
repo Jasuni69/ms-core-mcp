@@ -162,12 +162,11 @@ async def get_sql_endpoint(
             return None, None
 
         # Check if connection_string is just a server name (no semicolons)
-        # This is what Fabric API returns for lakehouses
+        # This is what Fabric API returns for lakehouses and warehouses
         if ";" not in connection_string:
-            # It's just a server hostname
             server = connection_string
-            # For lakehouses, the database name is the lakehouse ID
-            database = resource_id if type and type.lower() == "lakehouse" else None
+            # For both lakehouses and warehouses, the database name is the resource ID
+            database = resource_id
             if not database:
                 logger.error(f"Cannot determine database name for {type}")
                 return None, None

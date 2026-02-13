@@ -26,7 +26,9 @@ async def list_reports(workspace: Optional[str] = None, ctx: Context = None) -> 
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
 
-        workspace_ref = workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"]
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            return "Workspace not set. Please set a workspace using set_workspace."
         reports = await client.list_reports(workspace_ref)
 
         if not reports:
@@ -66,8 +68,11 @@ async def get_report(
             FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         )
 
+        workspace_ref = workspace or __ctx_cache.get(f"{ctx.client_id}_workspace")
+        if not workspace_ref:
+            return "Workspace not set. Please set a workspace using set_workspace."
         report = await client.get_report(
-            workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"],
+            workspace_ref,
             report_id,
         )
 
