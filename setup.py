@@ -80,23 +80,43 @@ def check_python() -> bool:
 
 
 def check_uv() -> bool:
-    """Check uv is installed."""
+    """Check uv is installed, offer to install if not."""
     header("2. uv package manager")
     code, out, _ = run_cmd(["uv", "--version"])
     if code == 0:
         ok(f"uv {out}")
         return True
-    else:
-        fail("uv not found")
+
+    fail("uv not found")
+    response = input("     Install uv now? (Y/n): ").strip().lower()
+    if response in ("", "y", "yes"):
+        print("     Installing uv...")
         if platform.system() == "Windows":
-            print("     Install: powershell -c \"irm https://astral.sh/uv/install.ps1 | iex\"")
+            install_code, _, install_err = run_cmd(
+                ["powershell", "-c", "irm https://astral.sh/uv/install.ps1 | iex"],
+                timeout=60,
+            )
         else:
-            print("     Install: curl -LsSf https://astral.sh/uv/install.sh | sh")
+            install_code, _, install_err = run_cmd(
+                ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+                timeout=60,
+            )
+        if install_code == 0:
+            ok("uv installed (restart terminal if not found)")
+            return True
+        else:
+            fail(f"Install failed: {install_err[:200]}")
+            return False
+    else:
+        if platform.system() == "Windows":
+            print("     Manual install: powershell -c \"irm https://astral.sh/uv/install.ps1 | iex\"")
+        else:
+            print("     Manual install: curl -LsSf https://astral.sh/uv/install.sh | sh")
         return False
 
 
 def check_azure_cli() -> bool:
-    """Check Azure CLI is installed."""
+    """Check Azure CLI is installed, offer to install if not."""
     header("3. Azure CLI")
     code, out, _ = run_cmd(["az", "version", "--output", "json"])
     if code == 0:
@@ -107,14 +127,40 @@ def check_azure_cli() -> bool:
         except json.JSONDecodeError:
             ok("Azure CLI installed")
         return True
+
+    fail("Azure CLI not found")
+    response = input("     Install Azure CLI now? (Y/n): ").strip().lower()
+    if response in ("", "y", "yes"):
+        print("     Installing Azure CLI...")
+        if platform.system() == "Windows":
+            install_code, _, install_err = run_cmd(
+                ["powershell", "-c", "winget install Microsoft.AzureCLI --accept-source-agreements --accept-package-agreements"],
+                timeout=120,
+            )
+        elif platform.system() == "Darwin":
+            install_code, _, install_err = run_cmd(
+                ["sh", "-c", "brew install azure-cli"],
+                timeout=120,
+            )
+        else:
+            install_code, _, install_err = run_cmd(
+                ["sh", "-c", "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"],
+                timeout=120,
+            )
+        if install_code == 0:
+            ok("Azure CLI installed (restart terminal if not found)")
+            return True
+        else:
+            fail(f"Install failed: {install_err[:200]}")
+            print("     Manual install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli")
+            return False
     else:
-        fail("Azure CLI not found")
-        print("     Install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli")
+        print("     Manual install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli")
         return False
 
 
 def check_azure_auth() -> bool:
-    """Check Azure authentication and Fabric API access."""
+    """Check Azure authentication, offer to login if not."""
     header("4. Azure authentication")
     code, out, err = run_cmd(
         ["az", "account", "get-access-token", "--resource", "https://api.fabric.microsoft.com/"],
@@ -123,9 +169,30 @@ def check_azure_auth() -> bool:
     if code == 0:
         ok("Authenticated with Fabric API")
         return True
+
+    fail("Not authenticated")
+    response = input("     Run az login now? (Y/n): ").strip().lower()
+    if response in ("", "y", "yes"):
+        print("     Opening browser for Azure login...")
+        login_code, _, login_err = run_cmd(["az", "login"], timeout=120)
+        if login_code == 0:
+            ok("Logged in to Azure")
+            # Verify Fabric API access
+            verify_code, _, _ = run_cmd(
+                ["az", "account", "get-access-token", "--resource", "https://api.fabric.microsoft.com/"],
+                timeout=15,
+            )
+            if verify_code == 0:
+                ok("Fabric API access confirmed")
+                return True
+            else:
+                warn("Logged in but Fabric API token failed - check workspace permissions")
+                return False
+        else:
+            fail("az login failed")
+            return False
     else:
-        fail("Not authenticated")
-        print("     Run: az login")
+        print("     Run manually: az login")
         return False
 
 
