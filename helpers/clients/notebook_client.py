@@ -99,8 +99,16 @@ class NotebookClient:
                 )
                 return response
 
-            # If the API returned an operation payload or unexpected shape
+            # LRO succeeded but response has no notebook ID - look it up by name
             logger.warning(f"Notebook creation returned unexpected response: {response}")
+            try:
+                notebooks = await self.client.get_notebooks(workspace_id)
+                for nb in notebooks:
+                    if nb.get("displayName") == notebook_name:
+                        logger.info(f"Found created notebook '{notebook_name}' with ID: {nb['id']}")
+                        return nb
+            except Exception as fetch_error:
+                logger.warning(f"Could not verify notebook creation: {fetch_error}")
             return {"message": "Notebook creation submitted", "response": response}
 
         except Exception as e:

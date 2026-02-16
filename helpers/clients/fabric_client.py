@@ -544,8 +544,12 @@ class FabricApiClient:
         
         # Check if response contains an error
         if isinstance(response, dict):
-            if "error" in response:
-                error_msg = response.get("error", {}).get("message", "Unknown error")
+            if "error" in response and response["error"]:
+                error_value = response["error"]
+                if isinstance(error_value, dict):
+                    error_msg = error_value.get("message", "Unknown error")
+                else:
+                    error_msg = str(error_value)
                 logger.error(f"API error creating item: {error_msg}")
                 raise ValueError(f"Failed to create item '{name}': {error_msg}")
             

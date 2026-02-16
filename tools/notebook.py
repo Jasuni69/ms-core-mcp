@@ -7,6 +7,7 @@ from helpers.clients import (
 )
 import json
 from helpers.logging_config import get_logger
+from helpers.utils.validators import _is_valid_uuid
 
 
 from typing import Optional, Dict, List, Any
@@ -318,6 +319,8 @@ async def create_notebook(
             "metadata": {"language_info": {"name": "python"}},
         }
         content = json.dumps(notebook_json)
+    elif isinstance(content, dict):
+        content = json.dumps(content)
     try:
         if ctx is None:
             raise ValueError("Context (ctx) must be provided.")
@@ -363,42 +366,44 @@ async def get_notebook_content(
 
         # Prefer the official GetDefinition API which returns definition.parts with the ipynb payload
         fabric_client = FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
+        import requests as http_requests
+        import time as _time
 
-        # Resolve workspace to ID to build the items URL
+        # Resolve workspace to ID
         (workspace_name, workspace_id) = await fabric_client.resolve_workspace_name_and_id(workspace)
 
-        # Call the GetDefinition action with format=ipynb to retrieve the .ipynb content
+        # Resolve notebook name to ID if needed
+        resolved_id = notebook_id
+        if not _is_valid_uuid(notebook_id):
+            notebooks = await fabric_client.get_notebooks(workspace_id)
+            for nb in notebooks:
+                if nb.get("displayName") == notebook_id:
+                    resolved_id = nb["id"]
+                    break
+            else:
+                return f"Could not find notebook '{notebook_id}' in workspace '{workspace_name}'"
+
+        # getDefinition is an LRO: POST → poll Location → GET {operation}/result
+        notebook = None
         try:
-            notebook = await fabric_client._make_request(
-                endpoint=f"workspaces/{workspace_id}/items/{notebook_id}/GetDefinition?format=ipynb",
-                params={},
-                method="POST",
-            )
-        except Exception:
+            url = fabric_client._build_url(f"workspaces/{workspace_id}/notebooks/{resolved_id}/getDefinition?format=ipynb")
+            resp = http_requests.post(url, headers=fabric_client._get_headers(), json={}, timeout=60)
+            if resp.status_code == 202:
+                op_url = resp.headers.get("Location") or resp.headers.get("Operation-Location")
+                if op_url:
+                    for _ in range(30):
+                        _time.sleep(2)
+                        poll = http_requests.get(op_url, headers=fabric_client._get_headers(), timeout=60)
+                        if poll.json().get("status") in ("Succeeded", "succeeded"):
+                            result = http_requests.get(op_url + "/result", headers=fabric_client._get_headers(), timeout=60)
+                            if result.status_code == 200:
+                                notebook = result.json()
+                            break
+            elif resp.status_code == 200:
+                notebook = resp.json()
+        except Exception as e:
+            logger.warning(f"getDefinition failed: {e}")
             notebook = None
-            pass
-
-        if not isinstance(notebook, dict):
-            # Fallback 1: lowercase action name
-            try:
-                notebook = await fabric_client._make_request(
-                    endpoint=f"workspaces/{workspace_id}/items/{notebook_id}/getDefinition?format=ipynb",
-                    params={},
-                    method="POST",
-                )
-            except Exception:
-                notebook = None
-
-        if not isinstance(notebook, dict):
-            # Fallback 2: plain GET with $expand=definition
-            try:
-                notebook = await fabric_client._make_request(
-                    endpoint=f"workspaces/{workspace_id}/items/{notebook_id}",
-                    params={"$expand": "definition"},
-                    method="GET",
-                )
-            except Exception:
-                notebook = None
 
         if not isinstance(notebook, dict):
             return f"Unexpected response when fetching notebook definition: type={type(notebook).__name__}, value={str(notebook)[:500]}"
@@ -1167,47 +1172,40 @@ async def update_notebook_cell(
 
         # Get current notebook content
         current_content = await get_notebook_content(workspace, notebook_id, ctx)
-        
-        if current_content.startswith("Error"):
-            return current_content
-        
-        # Validate content is not empty
-        if not current_content or current_content.strip() == "":
-            return "Error: Notebook content is empty. The notebook may not have been initialized properly."
-        
-        # Parse the notebook JSON
-        try:
-            notebook_data = json.loads(current_content)
-        except json.JSONDecodeError as je:
-            logger.error(f"Failed to parse notebook JSON: {je}")
-            logger.error(f"Content received: {current_content[:500]}")
-            return f"Error: Failed to parse notebook content as JSON. Content may be malformed or empty. Error: {str(je)}"
-        
-        cells = notebook_data.get("cells", [])
-        
-        # Ensure cells is a list
-        if not isinstance(cells, list):
-            logger.warning(f"Notebook cells is not a list: {type(cells)}. Initializing empty cells.")
-            cells = []
-            notebook_data["cells"] = cells
+
+        notebook_data = None
+        if current_content and not current_content.startswith("Error") and not current_content.startswith("Could not") and not current_content.startswith("Unexpected"):
+            try:
+                notebook_data = json.loads(current_content)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse notebook JSON, starting fresh")
+
+        # If read failed or returned empty, start with a blank notebook
+        if not notebook_data or not isinstance(notebook_data.get("cells"), list):
+            notebook_data = {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "cells": [],
+                "metadata": {"language_info": {"name": "python"}},
+            }
+
+        cells = notebook_data["cells"]
         
         # Create new cell object
         new_cell = {
             "cell_type": cell_type,
-            "source": cell_content.split('\n') if isinstance(cell_content, str) else cell_content,
+            "source": cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content,
             "execution_count": None,
             "outputs": [],
             "metadata": {}
         }
         
-        # If cell_index is beyond current cells, pad with empty cells or add at end
+        # If cell_index is beyond current cells, pad with empty cells up to that index
         if cell_index >= len(cells):
-            if cell_index == len(cells):
-                # Adding a new cell at the end
-                logger.info(f"Adding new cell at index {cell_index}")
-                cells.append(new_cell)
-            else:
-                return f"Cell index {cell_index} is out of range. Notebook has {len(cells)} cells. To add a new cell, use index {len(cells)}."
+            while len(cells) < cell_index:
+                cells.append({"cell_type": "code", "source": [], "execution_count": None, "outputs": [], "metadata": {}})
+            cells.append(new_cell)
+            logger.info(f"Added cell at index {cell_index} (notebook now has {len(cells)} cells)")
         else:
             # Update existing cell
             logger.info(f"Updating existing cell at index {cell_index}")
@@ -1219,16 +1217,29 @@ async def update_notebook_cell(
         # Build updateDefinition payload
         fabric_client = FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
         (workspace_name, workspace_id) = await fabric_client.resolve_workspace_name_and_id(workspace)
-        # Use notebook name when available to form the ipynb path
-        try:
-            item_meta = await fabric_client.get_item(
-                item_id=notebook_id,
-                workspace_id=workspace_id,
-                item_type="item",
-            )
-            display_name = item_meta.get("displayName") or "notebook"
-        except Exception:
-            display_name = "notebook"
+
+        # Resolve notebook name to ID if needed
+        resolved_id = notebook_id
+        display_name = notebook_id
+        if not _is_valid_uuid(notebook_id):
+            notebooks = await fabric_client.get_notebooks(workspace_id)
+            for nb in notebooks:
+                if nb.get("displayName") == notebook_id:
+                    resolved_id = nb["id"]
+                    display_name = nb["displayName"]
+                    break
+            else:
+                return f"Could not find notebook '{notebook_id}' in workspace '{workspace_name}'"
+        else:
+            try:
+                item_meta = await fabric_client.get_item(
+                    item_id=resolved_id,
+                    workspace_id=workspace_id,
+                    item_type="notebook",
+                )
+                display_name = item_meta.get("displayName") or "notebook"
+            except Exception:
+                display_name = "notebook"
 
         ipynb_path = f"{display_name}.ipynb"
         payload = {
@@ -1244,25 +1255,27 @@ async def update_notebook_cell(
             }
         }
 
-        # Prefer lower-case action, fallback to capitalized
-        endpoints = [
-            f"workspaces/{workspace_id}/items/{notebook_id}/updateDefinition",
-            f"workspaces/{workspace_id}/items/{notebook_id}/UpdateDefinition",
-        ]
-        last_error = None
-        for ep in endpoints:
+        # Use notebooks endpoint with LRO
+        try:
+            await fabric_client._make_request(
+                endpoint=f"workspaces/{workspace_id}/notebooks/{resolved_id}/updateDefinition",
+                method="post",
+                params=payload,
+                lro=True,
+            )
+            return f"Cell {cell_index} updated successfully."
+        except Exception as inner_exc:
+            # Fallback to items endpoint
             try:
                 await fabric_client._make_request(
-                    endpoint=ep,
+                    endpoint=f"workspaces/{workspace_id}/items/{resolved_id}/updateDefinition",
                     method="post",
                     params=payload,
+                    lro=True,
                 )
                 return f"Cell {cell_index} updated successfully."
-            except Exception as inner_exc:
-                last_error = inner_exc
-                continue
-
-        raise last_error or ValueError("Failed to update notebook definition")
+            except Exception as fallback_exc:
+                raise fallback_exc
         
     except Exception as e:
         logger.error(f"Error updating notebook cell: {str(e)}")
