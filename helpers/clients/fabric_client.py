@@ -1072,12 +1072,13 @@ class FabricApiClient:
         if not _is_valid_uuid(pipeline_id):
             raise ValueError("Invalid pipeline ID.")
 
-        endpoint = f"workspaces/{workspace_id}/dataPipelines/{pipeline_id}/definition"
+        endpoint = f"workspaces/{workspace_id}/dataPipelines/{pipeline_id}/getDefinition"
 
         try:
             response = await self._make_request(
                 endpoint=endpoint,
-                method="GET",
+                method="POST",
+                lro=True,
             )
 
             # The definition might be base64 encoded in parts

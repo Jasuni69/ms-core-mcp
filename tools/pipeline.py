@@ -83,9 +83,11 @@ async def pipeline_run(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
-        payload = parameters or {}
+        payload = {}
+        if parameters:
+            payload["executionData"] = {"parameters": parameters}
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/run",
+            endpoint=f"workspaces/{context['workspace_id']}/items/{context['item_id']}/jobs/instances?jobType=Pipeline",
             params=payload,
             method="post",
         )
@@ -108,7 +110,7 @@ async def pipeline_status(
             raise ValueError("run_id must be provided.")
 
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/runs/{run_id}"
+            endpoint=f"workspaces/{context['workspace_id']}/items/{context['item_id']}/jobs/instances/{run_id}"
         )
         return response
     except Exception as exc:
@@ -125,12 +127,16 @@ async def pipeline_logs(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_workspace_item(ctx, workspace, pipeline, "DataPipeline")
-        if not run_id:
-            raise ValueError("run_id must be provided.")
-
-        response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/dataPipelines/{context['item_id']}/runs/{run_id}/logs"
-        )
+        if run_id:
+            # Get specific job instance details (includes failure reason, timing, etc.)
+            response = await context["fabric_client"]._make_request(
+                endpoint=f"workspaces/{context['workspace_id']}/items/{context['item_id']}/jobs/instances/{run_id}"
+            )
+        else:
+            # List recent job instances for the pipeline
+            response = await context["fabric_client"]._make_request(
+                endpoint=f"workspaces/{context['workspace_id']}/items/{context['item_id']}/jobs/instances"
+            )
         return response
     except Exception as exc:
         logger.error("Error retrieving pipeline logs: %s", exc)

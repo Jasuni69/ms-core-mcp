@@ -115,7 +115,11 @@ async def get_permissions(
     item_id: str,
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Retrieve the permission assignments for a workspace item."""
+    """Retrieve the role assignments for a workspace.
+
+    Note: Fabric REST API does not support item-level permissions.
+    This returns workspace-level role assignments instead.
+    """
 
     try:
         if ctx is None:
@@ -127,7 +131,9 @@ async def get_permissions(
 
         _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
 
-        response = await fabric_client.get_item_permissions(ws_id, item_id)
+        response = await fabric_client._make_request(
+            f"workspaces/{ws_id}/roleAssignments"
+        )
 
         value: List[Dict[str, Any]]
         if isinstance(response, dict):
@@ -137,27 +143,34 @@ async def get_permissions(
         else:
             value = []
 
-        return {"itemId": item_id, "workspace": ws, "assignments": value}
+        return {"workspace": ws, "roleAssignments": value}
     except Exception as exc:
-        logger.error("Failed to get permissions for %s: %s", item_id, exc)
+        logger.error("Failed to get permissions for workspace %s: %s", workspace, exc)
         return {"error": str(exc)}
 
 
 @mcp.tool()
 async def set_permissions(
     workspace: Optional[str],
-    item_id: str,
-    assignments: Optional[List[Dict[str, Any]]] = None,
-    scope: Optional[str] = None,
+    principal_id: str,
+    principal_type: str = "User",
+    role: str = "Viewer",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Set or update permissions for a workspace item."""
+    """Add a workspace role assignment (Admin, Member, Contributor, Viewer).
+
+    Note: Fabric REST API supports workspace-level roles, not item-level permissions.
+
+    Args:
+        workspace: Workspace name or ID
+        principal_id: User, group, or service principal ID (UUID)
+        principal_type: "User", "Group", or "ServicePrincipal"
+        role: "Admin", "Member", "Contributor", or "Viewer"
+    """
 
     try:
         if ctx is None:
             raise ValueError("Context is required for setting permissions.")
-        if not assignments:
-            raise ValueError("Assignments must be provided to set permissions.")
 
         ws = _resolve_workspace(ctx, workspace)
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
@@ -165,20 +178,26 @@ async def set_permissions(
 
         _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
 
-        response = await fabric_client.set_item_permissions(
-            workspace_id=ws_id,
-            item_id=item_id,
-            assignments=assignments,
-            principal_scope=scope,
+        payload = {
+            "principal": {
+                "id": principal_id,
+                "type": principal_type,
+            },
+            "role": role,
+        }
+
+        response = await fabric_client._make_request(
+            endpoint=f"workspaces/{ws_id}/roleAssignments",
+            params=payload,
+            method="post",
         )
 
         return {
             "workspace": ws,
-            "itemId": item_id,
             "result": response,
         }
     except Exception as exc:
-        logger.error("Failed to set permissions for %s: %s", item_id, exc)
+        logger.error("Failed to set role assignment: %s", exc)
         return {"error": str(exc)}
 
 

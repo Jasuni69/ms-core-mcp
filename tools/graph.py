@@ -174,10 +174,17 @@ async def graph_drive(
             raise ValueError("Context (ctx) must be provided.")
 
         normalised_path = (path or "").strip("/")
-        if normalised_path:
-            url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{normalised_path}:/children"
+        # Support "me" to browse the current user's OneDrive
+        if drive_id.strip().lower() == "me":
+            if normalised_path:
+                url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{normalised_path}:/children"
+            else:
+                url = f"https://graph.microsoft.com/v1.0/me/drive/root/children"
         else:
-            url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/children"
+            if normalised_path:
+                url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{normalised_path}:/children"
+            else:
+                url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/children"
 
         return _graph_request(ctx, "get", url)
     except Exception as exc:
