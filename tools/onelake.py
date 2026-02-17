@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import Context
 
-from helpers.clients import FabricApiClient, OneLakeClient
+from helpers.clients import FabricApiClient, OneLakeClient, TableClient
 from helpers.logging_config import get_logger
 from helpers.utils.authentication import get_azure_credentials
 from helpers.utils.context import mcp, __ctx_cache
@@ -60,6 +60,29 @@ async def onelake_ls(
         credential, workspace_id, lakehouse_id = await _resolve_lakehouse_context(
             ctx, workspace, lakehouse
         )
+
+        # "Tables" root is a virtual mount in OneLake - list via Fabric API instead
+        if path and path.strip("/").lower() == "tables":
+            fabric_client = FabricApiClient(credential=credential)
+            table_client = TableClient(fabric_client)
+            tables = await table_client.list_tables(workspace_id, lakehouse_id, "lakehouse")
+            entries = []
+            if isinstance(tables, list):
+                for t in tables:
+                    entries.append({
+                        "name": f"Tables/{t.get('name')}",
+                        "is_directory": True,
+                        "size": None,
+                        "last_modified": None,
+                        "format": t.get("format"),
+                    })
+            return {
+                "workspaceId": workspace_id,
+                "lakehouseId": lakehouse_id,
+                "path": "Tables",
+                "entries": entries,
+            }
+
         client = OneLakeClient(credential)
         entries = await client.list_directory(workspace_id, lakehouse_id, path)
         return {

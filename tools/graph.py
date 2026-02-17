@@ -86,7 +86,10 @@ async def graph_user(email: str, ctx: Context) -> Dict[str, Any]:
     """Query Azure AD user profile details via Microsoft Graph."""
 
     try:
-        url = f"https://graph.microsoft.com/v1.0/users/{email}"
+        if email.strip().lower() == "me":
+            url = "https://graph.microsoft.com/v1.0/me"
+        else:
+            url = f"https://graph.microsoft.com/v1.0/users/{email}"
         return _graph_request(ctx, "get", url)
     except Exception as exc:
         logger.error("Error retrieving Graph user: %s", exc)

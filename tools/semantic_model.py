@@ -67,12 +67,14 @@ async def get_semantic_model(
         A string containing the details of the semantic model or an error message.
     """
     try:
-        client = SemanticModelClient(
-            FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
-        )
+        fabric_client = FabricApiClient(get_azure_credentials(ctx.client_id, __ctx_cache))
+        client = SemanticModelClient(fabric_client)
+
+        workspace_ref = workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"]
+        _, workspace_id = await fabric_client.resolve_workspace_name_and_id(workspace_ref)
 
         model = await client.get_semantic_model(
-            workspace if workspace else __ctx_cache[f"{ctx.client_id}_workspace"],
+            workspace_id,
             model_id if model_id else __ctx_cache[f"{ctx.client_id}_semantic_model"],
         )
 
@@ -725,22 +727,24 @@ async def analyze_dax_query(
         )
 
         # Execute DAX query with performance analysis
-        # Using the /dax/query endpoint
+        # Using the Power BI executeQueries endpoint
         query_request = {
             "queries": [
                 {
                     "query": dax_query
                 }
-            ]
+            ],
+            "serializerSettings": {"includeNulls": True},
         }
 
         import time
         start_time = time.time()
 
         query_response = await fabric_client._make_request(
-            endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/dax/query",
+            endpoint=f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets/{model_id}/executeQueries",
             method="post",
-            params=query_request
+            params=query_request,
+            token_scope="https://analysis.windows.net/powerbi/api/.default",
         )
 
         execution_time = time.time() - start_time

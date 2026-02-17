@@ -142,41 +142,30 @@ async def sql_explain(
 ) -> Dict[str, Any]:
     """Retrieve an estimated execution plan for a query."""
 
-    explain_query = f"EXPLAIN {query}"
     try:
-        result = await sql_query(
-            query=explain_query,
-            workspace=workspace,
-            lakehouse=lakehouse,
-            warehouse=warehouse,
-            type=type,
-            max_rows=200,
-            ctx=ctx,
+        client, endpoint, resolved_type, workspace_id, credential = await _resolve_sql_client(
+            ctx, workspace, lakehouse, warehouse, type
         )
-        if "error" in result:
-            raise ValueError(result["error"])
-        result["originalQuery"] = query
-        return result
+
+        def _get_plan():
+            with client.engine.connect() as conn:
+                conn.exec_driver_sql("SET SHOWPLAN_XML ON")
+                result = conn.exec_driver_sql(query)
+                rows = result.fetchall()
+                conn.exec_driver_sql("SET SHOWPLAN_XML OFF")
+                if rows:
+                    return str(rows[0][0])
+                return None
+
+        plan_xml = await asyncio.to_thread(_get_plan)
+        return {
+            "originalQuery": query,
+            "executionPlan": plan_xml,
+            "resource": endpoint,
+        }
     except Exception as exc:
-        logger.warning("EXPLAIN failed with message '%s'. Falling back to SHOWPLAN.", exc)
-        try:
-            showplan_query = (
-                "SET SHOWPLAN_XML ON; "
-                + query
-                + "; SET SHOWPLAN_XML OFF;"
-            )
-            return await sql_query(
-                query=showplan_query,
-                workspace=workspace,
-                lakehouse=lakehouse,
-                warehouse=warehouse,
-                type=type,
-                max_rows=1,
-                ctx=ctx,
-            )
-        except Exception as inner_exc:
-            logger.error("Showplan retrieval failed: %s", inner_exc)
-            return {"error": str(inner_exc)}
+        logger.error("Error retrieving execution plan: %s", exc)
+        return {"error": str(exc)}
 
 
 @mcp.tool()
@@ -215,7 +204,7 @@ async def sql_export(
             raise ValueError("file_format must be either 'csv' or 'parquet'.")
 
         if resolved_type == "lakehouse":
-            export_resource = endpoint["resourceId"]
+            export_resource = lakehouse or __ctx_cache.get(f"{ctx.client_id}_lakehouse")
         else:
             export_resource = export_lakehouse or lakehouse or __ctx_cache.get(
                 f"{ctx.client_id}_lakehouse"

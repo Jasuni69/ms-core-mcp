@@ -980,13 +980,13 @@ df_agg = df \\
 
 df_agg.show()""",
             
-            "schema_inference": f"""# Schema inference and data profiling
+            "schema_inference": """# Schema inference and data profiling
 print("=== Schema Information ===")
 df.printSchema()
 
 print("\\n=== Data Profile ===")
-print(f"Record count: {{df.count()}}")
-print(f"Column count: {{len(df.columns)}}")
+print(f"Record count: {df.count()}")
+print(f"Column count: {len(df.columns)}")
 
 print("\\n=== Column Statistics ===")
 df.describe().show()
@@ -1000,24 +1000,24 @@ null_counts = df.select([
 ])
 null_counts.show()""",
             
-            "data_quality": f"""# Data quality checks
+            "data_quality": """# Data quality checks
 from pyspark.sql.functions import *
 
 print("=== Data Quality Report ===")
 
 # Check for duplicates
 duplicate_count = df.count() - df.distinct().count()
-print(f"Duplicate rows: {{duplicate_count}}")
+print(f"Duplicate rows: {duplicate_count}")
 
 # Check for null values
 total_rows = df.count()
 for column in df.columns:
     null_count = df.filter(col(column).isNull()).count()
     null_percentage = (null_count / total_rows) * 100
-    print(f"{{column}}: {{null_count}} nulls ({{null_percentage:.2f}}%)")
+    print(f"{column}: {null_count} nulls ({null_percentage:.2f}%)")
 
 # Check data ranges (for numeric columns)
-numeric_columns = [field.name for field in df.schema.fields 
+numeric_columns = [field.name for field in df.schema.fields
                   if field.dataType.simpleString() in ['int', 'double', 'float', 'bigint']]
 
 if numeric_columns:

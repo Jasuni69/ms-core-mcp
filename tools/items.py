@@ -37,10 +37,12 @@ async def resolve_item(
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
         fabric_client = FabricApiClient(credential=credential)
 
+        _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
+
         item_name, item_id = await fabric_client.resolve_item_name_and_id(
             item=name_or_id,
             type=type,
-            workspace=ws,
+            workspace=ws_id,
         )
 
         return {
@@ -73,6 +75,8 @@ async def list_items(
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
         fabric_client = FabricApiClient(credential=credential)
 
+        _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
+
         params: Dict[str, Any] = {}
         if search:
             params["search"] = search
@@ -81,7 +85,7 @@ async def list_items(
         if skip:
             params["$skip"] = max(skip, 0)
 
-        items = await fabric_client.get_items(ws, item_type=type, params=params)
+        items = await fabric_client.get_items(ws_id, item_type=type, params=params)
 
         if not items:
             return "No items found for the specified criteria."
@@ -121,7 +125,9 @@ async def get_permissions(
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
         fabric_client = FabricApiClient(credential=credential)
 
-        response = await fabric_client.get_item_permissions(ws, item_id)
+        _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
+
+        response = await fabric_client.get_item_permissions(ws_id, item_id)
 
         value: List[Dict[str, Any]]
         if isinstance(response, dict):
@@ -157,8 +163,10 @@ async def set_permissions(
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
         fabric_client = FabricApiClient(credential=credential)
 
+        _, ws_id = await fabric_client.resolve_workspace_name_and_id(ws)
+
         response = await fabric_client.set_item_permissions(
-            workspace_id=ws,
+            workspace_id=ws_id,
             item_id=item_id,
             assignments=assignments,
             principal_scope=scope,

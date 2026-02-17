@@ -10,6 +10,15 @@ from helpers.utils import _is_valid_uuid
 
 logger = get_logger(__name__)
 
+# Fabric Job Scheduler uses item-specific job type names
+_ITEM_JOB_TYPES = {
+    "Notebook": "RunNotebook",
+    "SparkJobDefinition": "SparkJobDefinitionV1",
+    "Pipeline": "Pipeline",
+    "DataPipeline": "Pipeline",
+    "Lakehouse": "TableMaintenance",
+}
+
 
 async def _resolve_workspace(
     ctx: Context,
@@ -151,79 +160,26 @@ async def dataflow_refresh(
 async def schedule_list(
     workspace: Optional[str] = None,
     item: Optional[str] = None,
-    ctx: Context = None,
-) -> Dict[str, Any]:
-    try:
-        context = await _resolve_workspace(ctx, workspace)
-        fabric_client = context["fabric_client"]
-
-        if item:
-            if _is_valid_uuid(item):
-                item_name = item
-                item_id = item
-            else:
-                item_name = None
-                item_id = None
-                for item_type in [
-                    "SemanticModel",
-                    "Pipeline",
-                    "Dataflow",
-                    "Lakehouse",
-                    "Warehouse",
-                    "Notebook",
-                    "Report",
-                ]:
-                    try:
-                        resolved_name, resolved_id = await fabric_client.resolve_item_name_and_id(
-                            item=item,
-                            type=item_type,
-                            workspace=context["workspace_id"],
-                        )
-                        item_name, item_id = resolved_name, resolved_id
-                        break
-                    except Exception:
-                        continue
-
-                if not item_id:
-                    raise ValueError(
-                        f"Unable to resolve item '{item}' in workspace."
-                    )
-
-            response = await fabric_client._make_request(
-                endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/refreshSchedule"
-            )
-            return {"item": item_name, "schedule": response}
-
-        response = await fabric_client._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/refreshSchedules"
-        )
-        return response
-    except Exception as exc:
-        logger.error("Error listing schedules: %s", exc)
-        return {"error": str(exc)}
-
-
-@mcp.tool()
-async def schedule_set(
-    workspace: Optional[str] = None,
-    item: Optional[str] = None,
-    schedule: Optional[Dict[str, Any]] = None,
+    job_type: str = "DefaultJob",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     try:
         if not item:
-            raise ValueError("Item must be specified when setting a schedule.")
+            raise ValueError("Item must be specified to list schedules.")
 
         context = await _resolve_workspace(ctx, workspace)
         fabric_client = context["fabric_client"]
 
+        resolved_item_type = None
         if _is_valid_uuid(item):
+            item_name = item
             item_id = item
         else:
+            item_name = None
             item_id = None
-            for item_type in [
+            for try_type in [
                 "SemanticModel",
-                "Pipeline",
+                "DataPipeline",
                 "Dataflow",
                 "Lakehouse",
                 "Warehouse",
@@ -231,12 +187,13 @@ async def schedule_set(
                 "Report",
             ]:
                 try:
-                    _, resolved_id = await fabric_client.resolve_item_name_and_id(
+                    resolved_name, resolved_id = await fabric_client.resolve_item_name_and_id(
                         item=item,
-                        type=item_type,
+                        type=try_type,
                         workspace=context["workspace_id"],
                     )
-                    item_id = resolved_id
+                    item_name, item_id = resolved_name, resolved_id
+                    resolved_item_type = try_type
                     break
                 except Exception:
                     continue
@@ -246,10 +203,77 @@ async def schedule_set(
                     f"Unable to resolve item '{item}' in workspace."
                 )
 
+        # Auto-detect job type when using default
+        effective_job_type = job_type
+        if job_type == "DefaultJob" and resolved_item_type in _ITEM_JOB_TYPES:
+            effective_job_type = _ITEM_JOB_TYPES[resolved_item_type]
+
         response = await fabric_client._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/refreshSchedule",
-            params=schedule or {},
-            method="patch",
+            endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/jobs/{effective_job_type}/schedules"
+        )
+        return {"item": item_name, "job_type": effective_job_type, "schedules": response}
+    except Exception as exc:
+        logger.error("Error listing schedules: %s", exc)
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+async def schedule_set(
+    workspace: Optional[str] = None,
+    item: Optional[str] = None,
+    job_type: str = "DefaultJob",
+    schedule: Optional[Dict[str, Any]] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    try:
+        if not item:
+            raise ValueError("Item must be specified when setting a schedule.")
+        if not schedule:
+            raise ValueError("Schedule configuration must be provided.")
+
+        context = await _resolve_workspace(ctx, workspace)
+        fabric_client = context["fabric_client"]
+
+        resolved_item_type = None
+        if _is_valid_uuid(item):
+            item_id = item
+        else:
+            item_id = None
+            for try_type in [
+                "SemanticModel",
+                "DataPipeline",
+                "Dataflow",
+                "Lakehouse",
+                "Warehouse",
+                "Notebook",
+                "Report",
+            ]:
+                try:
+                    _, resolved_id = await fabric_client.resolve_item_name_and_id(
+                        item=item,
+                        type=try_type,
+                        workspace=context["workspace_id"],
+                    )
+                    item_id = resolved_id
+                    resolved_item_type = try_type
+                    break
+                except Exception:
+                    continue
+
+            if not item_id:
+                raise ValueError(
+                    f"Unable to resolve item '{item}' in workspace."
+                )
+
+        # Auto-detect job type when using default
+        effective_job_type = job_type
+        if job_type == "DefaultJob" and resolved_item_type in _ITEM_JOB_TYPES:
+            effective_job_type = _ITEM_JOB_TYPES[resolved_item_type]
+
+        response = await fabric_client._make_request(
+            endpoint=f"workspaces/{context['workspace_id']}/items/{item_id}/jobs/{effective_job_type}/schedules",
+            params=schedule,
+            method="post",
         )
         return response
     except Exception as exc:

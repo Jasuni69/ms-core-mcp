@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
+from deltalake import DeltaTable
+
 from helpers.utils.context import mcp, __ctx_cache
 from mcp.server.fastmcp import Context
 from helpers.utils.authentication import get_azure_credentials
@@ -239,30 +241,23 @@ async def describe_history(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_lakehouse_and_table(ctx, workspace, lakehouse, table)
+        table_path = context["table"].get("location")
+        if not table_path:
+            raise ValueError(f"No location found for table '{context['table_name']}'.")
 
-        _, endpoint = await get_sql_endpoint(
-            workspace=context["workspace_ref"],
-            lakehouse=context["lakehouse_name"],
-            type="lakehouse",
-            credential=context["credential"],
-        )
-        if not endpoint:
-            raise ValueError("Unable to resolve SQL endpoint for the specified lakehouse.")
+        token = context["credential"].get_token("https://storage.azure.com/.default").token
+        storage_options = {"bearer_token": token, "use_fabric_endpoint": "true"}
 
-        client = SQLClient(
-            endpoint["server"], endpoint["database"], context["credential"]
-        )
-        limit_clause = f" LIMIT {max(limit, 1)}" if limit and limit > 0 else ""
-        query = f"DESCRIBE HISTORY {context['identifier']}{limit_clause}"
-        df = await asyncio.to_thread(client.run_query, query)
-        columns = list(df.columns)
-        rows = [dict(zip(columns, row)) for row in df.rows()]
+        def _get_history():
+            dt = DeltaTable(table_path, storage_options=storage_options)
+            return dt.history(limit=max(limit, 1))
+
+        history = await asyncio.to_thread(_get_history)
 
         return {
             "table": context["table_name"],
-            "history": rows,
-            "columns": columns,
-            "returnedRows": len(rows),
+            "history": history,
+            "returnedRows": len(history),
         }
     except Exception as exc:
         logger.error("Error describing table history: %s", exc)
@@ -279,28 +274,25 @@ async def optimize_delta(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_lakehouse_and_table(ctx, workspace, lakehouse, table)
+        table_path = context["table"].get("location")
+        if not table_path:
+            raise ValueError(f"No location found for table '{context['table_name']}'.")
 
-        _, endpoint = await get_sql_endpoint(
-            workspace=context["workspace_ref"],
-            lakehouse=context["lakehouse_name"],
-            type="lakehouse",
-            credential=context["credential"],
-        )
-        if not endpoint:
-            raise ValueError("Unable to resolve SQL endpoint for the specified lakehouse.")
+        token = context["credential"].get_token("https://storage.azure.com/.default").token
+        storage_options = {"bearer_token": token, "use_fabric_endpoint": "true"}
 
-        client = SQLClient(
-            endpoint["server"], endpoint["database"], context["credential"]
-        )
-        if zorder_by:
-            columns = ", ".join(f"[{col.strip()}]" for col in zorder_by if col)
-            statement = f"OPTIMIZE {context['identifier']} ZORDER BY ({columns})"
-        else:
-            statement = f"OPTIMIZE {context['identifier']}"
+        def _optimize():
+            dt = DeltaTable(table_path, storage_options=storage_options)
+            if zorder_by:
+                return dt.optimize.z_order(zorder_by)
+            return dt.optimize.compact()
 
-        result = await asyncio.to_thread(client.execute, statement)
-        result.update({"statement": statement})
-        return result
+        result = await asyncio.to_thread(_optimize)
+        return {
+            "table": context["table_name"],
+            "result": str(result),
+            "zorder_by": zorder_by,
+        }
     except Exception as exc:
         logger.error("Error optimizing delta table: %s", exc)
         return {"error": str(exc)}
@@ -316,25 +308,24 @@ async def vacuum_delta(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_lakehouse_and_table(ctx, workspace, lakehouse, table)
+        table_path = context["table"].get("location")
+        if not table_path:
+            raise ValueError(f"No location found for table '{context['table_name']}'.")
 
-        _, endpoint = await get_sql_endpoint(
-            workspace=context["workspace_ref"],
-            lakehouse=context["lakehouse_name"],
-            type="lakehouse",
-            credential=context["credential"],
-        )
-        if not endpoint:
-            raise ValueError("Unable to resolve SQL endpoint for the specified lakehouse.")
+        token = context["credential"].get_token("https://storage.azure.com/.default").token
+        storage_options = {"bearer_token": token, "use_fabric_endpoint": "true"}
 
-        client = SQLClient(
-            endpoint["server"], endpoint["database"], context["credential"]
-        )
-        statement = (
-            f"VACUUM {context['identifier']} RETAIN {max(retain_hours, 0)} HOURS"
-        )
-        result = await asyncio.to_thread(client.execute, statement)
-        result.update({"statement": statement})
-        return result
+        def _vacuum():
+            dt = DeltaTable(table_path, storage_options=storage_options)
+            from datetime import timedelta
+            return dt.vacuum(retention_hours=max(retain_hours, 0), enforce_retention_duration=False)
+
+        deleted_files = await asyncio.to_thread(_vacuum)
+        return {
+            "table": context["table_name"],
+            "retainHours": retain_hours,
+            "deletedFiles": len(deleted_files),
+        }
     except Exception as exc:
         logger.error("Error vacuuming delta table: %s", exc)
         return {"error": str(exc)}

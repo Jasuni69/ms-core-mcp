@@ -42,12 +42,18 @@ async def get_sql_endpoint(
                     "Either lakehouse or warehouse must be specified or set in context."
                 )
 
+        if type is None:
+            if warehouse:
+                type = "warehouse"
+            elif lakehouse:
+                type = "lakehouse"
+
         credential = get_azure_credentials(ctx.client_id, __ctx_cache)
 
         name, endpoint = await _get_sql_endpoint_helper(
             workspace=workspace,
             lakehouse=lakehouse,
-            warehouse=warehouse,  # Add warehouse to the call
+            warehouse=warehouse,
             type=type,
             credential=credential,
         )

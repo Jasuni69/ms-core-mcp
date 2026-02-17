@@ -32,10 +32,11 @@ class FabricApiClient:
         self._cached_resolve_workspace = lru_cache(maxsize=128)(self._resolve_workspace)
         self._cached_resolve_lakehouse = lru_cache(maxsize=128)(self._resolve_lakehouse)
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, token_scope: Optional[str] = None) -> Dict[str, str]:
         """Get headers for Fabric API calls"""
+        scope = token_scope or "https://api.fabric.microsoft.com/.default"
         return {
-            "Authorization": f"Bearer {self.credential.get_token('https://api.fabric.microsoft.com/.default').token}"
+            "Authorization": f"Bearer {self.credential.get_token(scope).token}"
         }
 
     def _build_url(
@@ -63,6 +64,7 @@ class FabricApiClient:
         lro: bool = False,
         lro_poll_interval: int = 2,  # seconds between polls
         lro_timeout: int = 300,  # max seconds to wait
+        token_scope: Optional[str] = None,
     ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Make an asynchronous call to the Fabric API.
@@ -84,7 +86,7 @@ class FabricApiClient:
                     # logger.debug(f"Request parameters: {params}")
                     response = requests.post(
                         url,
-                        headers=self._get_headers(),
+                        headers=self._get_headers(token_scope),
                         json=params,
                         timeout=120,
                     )
@@ -94,7 +96,7 @@ class FabricApiClient:
                     response = requests.request(
                         method=method.upper(),
                         url=url,
-                        headers=self._get_headers(),
+                        headers=self._get_headers(token_scope),
                         params=params,
                         timeout=120,
                     )

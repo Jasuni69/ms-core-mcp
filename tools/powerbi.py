@@ -102,11 +102,15 @@ async def dax_query(
 ) -> Dict[str, Any]:
     try:
         context = await _resolve_item(ctx, workspace, dataset, "SemanticModel")
-        payload = {"queries": [{"query": query}]}
+        payload = {
+            "queries": [{"query": query}],
+            "serializerSettings": {"includeNulls": True},
+        }
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/semanticModels/{context['item_id']}/dax/query",
+            endpoint=f"https://api.powerbi.com/v1.0/myorg/groups/{context['workspace_id']}/datasets/{context['item_id']}/executeQueries",
             params=payload,
             method="post",
+            token_scope="https://analysis.windows.net/powerbi/api/.default",
         )
         return response
     except Exception as exc:
