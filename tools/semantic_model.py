@@ -124,7 +124,8 @@ async def get_model_schema(
         # Get model definition using Fabric API
         definition_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/getDefinition",
-            method="post"
+            method="post",
+            lro=True,
         )
 
         logger.info(f"Got model definition for {model_name}")
@@ -342,7 +343,8 @@ async def create_measure(
         # Get current model definition
         definition_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/getDefinition",
-            method="post"
+            method="post",
+            lro=True,
         )
 
         if not isinstance(definition_response, dict) or "definition" not in definition_response:
@@ -415,7 +417,8 @@ async def create_measure(
         update_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/updateDefinition",
             method="post",
-            params=update_request
+            params=update_request,
+            lro=True,
         )
 
         logger.info(f"Created measure '{measure_name}' in table '{table_name}' of model '{model_name}'")
@@ -483,7 +486,8 @@ async def update_measure(
         # Get current model definition
         definition_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/getDefinition",
-            method="post"
+            method="post",
+            lro=True,
         )
 
         if not isinstance(definition_response, dict) or "definition" not in definition_response:
@@ -552,7 +556,8 @@ async def update_measure(
         update_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/updateDefinition",
             method="post",
-            params=update_request
+            params=update_request,
+            lro=True,
         )
 
         logger.info(f"Updated measure '{measure_name}' in model '{model_name}'")
@@ -609,7 +614,8 @@ async def delete_measure(
         # Get current model definition
         definition_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/getDefinition",
-            method="post"
+            method="post",
+            lro=True,
         )
 
         if not isinstance(definition_response, dict) or "definition" not in definition_response:
@@ -667,7 +673,8 @@ async def delete_measure(
         update_response = await fabric_client._make_request(
             endpoint=f"workspaces/{workspace_id}/semanticModels/{model_id}/updateDefinition",
             method="post",
-            params=update_request
+            params=update_request,
+            lro=True,
         )
 
         logger.info(f"Deleted measure '{measure_name}' from model '{model_name}'")

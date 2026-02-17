@@ -103,17 +103,27 @@ class FabricApiClient:
     
                 # LRO support: check for 202 and Operation-Location/Location
                 if lro and response.status_code == 202:
-                    op_url = (
+                    # Fabric APIs use two headers:
+                    # - Operation-Location: URL to poll for operation status
+                    # - Location: URL to GET the actual result after operation completes
+                    op_location = (
                         response.headers.get("Operation-Location")
                         or response.headers.get("operation-location")
-                        or response.headers.get("Location")
+                    )
+                    location = (
+                        response.headers.get("Location")
                         or response.headers.get("location")
                     )
+
+                    # If both exist, poll op_location and fetch result from location
+                    # If only location exists, use it for polling (legacy pattern)
+                    op_url = op_location or location
+                    result_url = location if op_location and location and op_location != location else None
+
                     if not op_url:
                         logger.error("LRO: No Operation-Location header found in 202 response.")
                         logger.error(f"LRO: Response headers: {dict(response.headers)}")
                         logger.error(f"LRO: Response body: {response.text[:500] if response.text else 'empty'}")
-                        # Try to parse the response body anyway
                         try:
                             body = response.json()
                             logger.info(f"LRO: Returning response body despite missing Operation-Location")
@@ -121,6 +131,8 @@ class FabricApiClient:
                         except Exception:
                             return None
                     logger.info(f"LRO: Polling {op_url} for operation status...")
+                    if result_url:
+                        logger.info(f"LRO: Result will be fetched from {result_url}")
                     start_time = time.time()
                     while True:
                         # Respect Retry-After when provided
@@ -143,6 +155,13 @@ class FabricApiClient:
                         status = poll_data.get("status") or poll_data.get(
                             "operationStatus"
                         )
+
+                        # If 200 response with no status field, the result IS the data
+                        # (Location URL returns actual content when operation completes)
+                        if poll_resp.status_code == 200 and status is None:
+                            logger.info("LRO: Got 200 with no status field - treating as completed result.")
+                            return poll_data
+
                         if status in (
                             "Succeeded",
                             "succeeded",
@@ -150,17 +169,28 @@ class FabricApiClient:
                             "completed",
                         ):
                             logger.info("LRO: Operation succeeded.")
+
+                            # If we have a separate result URL, fetch the actual result
+                            if result_url:
+                                logger.info(f"LRO: Fetching result from {result_url}")
+                                try:
+                                    result_resp = requests.get(
+                                        result_url, headers=self._get_headers(token_scope), timeout=120
+                                    )
+                                    if result_resp.status_code == 200 and result_resp.text:
+                                        return result_resp.json()
+                                    logger.warning(f"LRO: Result fetch returned {result_resp.status_code}")
+                                except Exception as result_exc:
+                                    logger.warning(f"LRO: Failed to fetch result: {result_exc}")
+
                             # Extract resource details from the polling response
-                            # Try common fields where the created resource details might be
                             resource = (
-                                poll_data.get("resource") 
+                                poll_data.get("resource")
                                 or poll_data.get("result")
                                 or poll_data.get("item")
                             )
                             if resource and isinstance(resource, dict):
                                 return resource
-                            # If no nested resource, return the poll_data itself
-                            # (some APIs include resource fields at the top level)
                             return poll_data
                         if status in ("Failed", "failed", "Canceled", "canceled"):
                             logger.error(

@@ -83,9 +83,10 @@ async def semantic_model_refresh(
         context = await _resolve_item(ctx, workspace, model, "SemanticModel")
         payload = {"type": refresh_type}
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/semanticModels/{context['item_id']}/refreshes",
+            endpoint=f"https://api.powerbi.com/v1.0/myorg/groups/{context['workspace_id']}/datasets/{context['item_id']}/refreshes",
             params=payload,
             method="post",
+            token_scope="https://analysis.windows.net/powerbi/api/.default",
         )
         return response
     except Exception as exc:
