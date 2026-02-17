@@ -246,7 +246,7 @@ async def cluster_info(
     try:
         context = await _resolve_notebook_context(ctx, workspace, None, require_notebook=False)
         response = await context["fabric_client"]._make_request(
-            endpoint=f"workspaces/{context['workspace_id']}/spark/clusterInfo"
+            endpoint=f"workspaces/{context['workspace_id']}/spark/settings"
         )
         return response
     except Exception as exc:
